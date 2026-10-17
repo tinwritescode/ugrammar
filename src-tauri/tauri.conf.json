@@ -1,0 +1,40 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ugrammar",
+  "version": "0.1.4",
+  "identifier": "dev.ugrammar.app",
+  "build": {
+    "frontendDist": "../dist",
+    "beforeDevCommand": "bun run build",
+    "beforeBuildCommand": "bun run build"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app"
+    ],
+    "icon": [
+      "icons/icon.png"
+    ],
+    "externalBin": [
+      "binaries/grammar-helper"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "12.0",
+      "signingIdentity": "-"
+    },
+    "publisher": "Tín Nguyễn",
+    "copyright": "© 2026 Tín Nguyễn",
+    "category": "Productivity",
+    "shortDescription": "Menu-bar grammar fixer for macOS",
+    "longDescription": "Select text anywhere, press a hotkey, review the diff, and accept. Auto-check can also review each sentence as you finish typing it.",
+    "homepage": "https://github.com/tinwritescode/ugrammar"
+  }
+}

@@ -1,7 +1,28 @@
-import type { DiffOp } from "./diff";
-import type { Settings } from "../main/settings";
-import type { Tone } from "../main/engine/types";
-import type { StatusKind } from "../main/flow";
+export type DiffOp = { type: "equal" | "delete" | "insert"; text: string };
+export type Tone = "formal" | "friendly" | "short";
+export type StatusKind = "idle" | "checking" | "paused" | "error" | "needs_permission";
+
+export interface Hotkey {
+  key: string;
+  mods: ("cmd" | "alt" | "ctrl" | "shift")[];
+}
+
+export interface Settings {
+  endpoint: string;
+  model: string;
+  timeoutMs: number;
+  dictionary: string[];
+  excludedApps: string[];
+  hotkey: Hotkey;
+  paused: boolean;
+  explain: boolean;
+  showBadge: boolean;
+  autoCheck: boolean;
+  autoCheckMode: "underline" | "popup";
+  quickFix: boolean;
+  explainLang: string;
+  firstRunAcknowledged: boolean;
+}
 
 export interface PopoverPayload {
   kind: "diff" | "message" | "loading";
@@ -29,7 +50,7 @@ export interface TrayState {
   hasApiKey: boolean;
 }
 
-export type TrayAction = "quit" | "ax" | Tone;
+export type TrayAction = "quit" | "ax" | "github" | Tone;
 
 export interface TestResult {
   ok: boolean;
@@ -53,4 +74,5 @@ export interface ProofyApi {
   onTray(cb: (s: TrayState) => void): void;
   trayAction(a: TrayAction): void;
   trayResize(height: number): void;
+  appVersion(): Promise<string>;
 }
