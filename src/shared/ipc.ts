@@ -26,7 +26,7 @@ export interface TestResult {
 export interface ProofyApi {
   onPopover(cb: (p: PopoverPayload) => void): void;
   popoverAction(action: "accept" | "dismiss"): void;
-  popoverResize(height: number): void;
+  popoverResize(height: number, width?: number): void;
   badgeClick(): void;
   badgeMenu(): void;
   underlineClick(): void;

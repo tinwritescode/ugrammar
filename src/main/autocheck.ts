@@ -24,6 +24,16 @@ export interface Snapshot extends HelperReply {
   bounds?: ({ x: number; y: number; w: number; h: number } | null)[];
 }
 
+/** A checked sentence with fixes, for the popup mode. Offsets are UTF-16, into the field text. */
+export interface SentenceFix {
+  start: number;
+  original: string;
+  corrected: string;
+  notes: string[];
+  /** Issue the popup anchors to (its underline bounds). */
+  firstId: number;
+}
+
 export interface AutoDeps {
   settings(): Settings;
   snapshot(excluded: string[], ranges: { loc: number; len: number }[]): Promise<Snapshot>;
@@ -31,6 +41,10 @@ export interface AutoDeps {
   /** Underline marks changed; empty = hide all. */
   onMarks(marks: { id: number; x: number; y: number; w: number; h: number }[]): void;
   now?(): number;
+  /** Popup mode: show (range) / hide (null) a "Checking…" hint at the sentence while the request runs. */
+  onLoading?(at: { start: number; length: number } | null): void;
+  /** Popup mode: fires only while the user has not typed past the sentence. */
+  onSentence?(fix: SentenceFix): void;
   /** Diagnostics: outcomes only, never text. */
   log?(msg: string): void;
 }
@@ -58,12 +72,15 @@ export class AutoChecker {
   private timer: ReturnType<typeof setInterval> | null = null;
   private busy = false;
   private checking = false;
+  private loading = false;
   private nextId = 1;
   private field = "";
   private lastText = "";
   private loggedText = "";
+  private loggedMarks = "";
   private changedAt = 0;
-  private checked = new Set<string>();
+  /** Sentence → its spans (offsets within the sentence); null while in flight or after a failure. */
+  private checked = new Map<string, Omit<Issue, "id">[] | null>();
   issues: Issue[] = [];
   pid?: number;
   appName?: string;
@@ -89,7 +106,19 @@ export class AutoChecker {
   }
 
   dismiss(id: number) {
+    const gone = this.issues.find((i) => i.id === id);
     this.issues = this.issues.filter((i) => i.id !== id);
+    // A dismissed fix must not come back from the cache when the sentence is seen again.
+    if (gone) for (const [k, spans] of this.checked) {
+      if (spans) this.checked.set(k, spans.filter((sp) => sp.original !== gone.original || sp.replacement !== gone.replacement));
+    }
+  }
+
+  /** Popup closed: accepted → the sentence was rewritten; dismissed → its fixes stay hidden. */
+  resolveSentence(start: number, length: number, accepted: boolean) {
+    const inside = this.issues.filter((i) => i.start >= start && i.end <= start + length);
+    for (const it of inside) this.dismiss(it.id);
+    if (accepted) this.lastText = "";
   }
 
   /** After a range was replaced: forget that issue and let the next tick re-anchor the rest. */
@@ -98,14 +127,19 @@ export class AutoChecker {
     this.lastText = "";
   }
 
-  private async tick() {
+  async tick() {
     if (this.busy) return;
     this.busy = true;
     try {
       const s = this.d.settings();
       if (!s.autoCheck || s.paused) return this.reset();
-      const snap = await this.d.snapshot(s.excludedApps, this.issues.map((i) => ({ loc: i.start, len: i.end - i.start })));
-      if (!snap.ok || !snap.visible || typeof snap.text !== "string") { this.d.log?.(`snap ok=${snap.ok} visible=${snap.visible} err=${snap.error ?? "-"}`); return this.reset(); }
+      const asked = this.issues;
+      const snap = await this.d.snapshot(s.excludedApps, asked.map((i) => ({ loc: i.start, len: i.end - i.start })));
+      if (!snap.ok || !snap.visible || typeof snap.text !== "string") {
+        // Focus often blips to a button/toolbar for one poll: hide marks but keep issues, so the field comes back intact.
+        this.d.log?.(`snap ok=${snap.ok} visible=${snap.visible} err=${snap.error ?? "-"} why=${String(snap.reason ?? "-")}`);
+        return this.d.onMarks([]);
+      }
       const text = snap.text;
       const field = `${snap.pid}:${snap.bundleId}`;
       const now = this.d.now?.() ?? Date.now();
@@ -115,17 +149,19 @@ export class AutoChecker {
       if (text !== this.lastText) {
         this.lastText = text;
         this.changedAt = now;
+        this.setLoading(null); // typing on: the popup will not open, so drop its hint
         this.issues = revalidate(this.issues, text);
       }
-      this.publish(snap);
+      this.publish(snap, asked);
       if (this.checking || now - this.changedAt < STABLE_MS || (snap.selLen ?? 0) > 0) return;
       const sent = sentenceEndingAt(text, snap.caret ?? 0);
-      if (!sent || this.checked.has(sent.text)) {
-        if (text !== this.loggedText) { this.loggedText = text; this.d.log?.(`no sentence app=${snap.bundleId} len=${text.length} caret=${snap.caret} cached=${!!sent}`); }
+      if (sent && this.checked.has(sent.text)) return this.restore(sent.start, sent.text);
+      if (!sent) {
+        if (text !== this.loggedText) { this.loggedText = text; this.d.log?.(`no sentence app=${snap.bundleId} len=${text.length} caret=${snap.caret}`); }
         return;
       }
-      this.checked.add(sent.text);
-      if (this.checked.size > MAX_CACHE) this.checked.delete(this.checked.values().next().value!);
+      this.checked.set(sent.text, null);
+      if (this.checked.size > MAX_CACHE) this.checked.delete(this.checked.keys().next().value!);
       this.d.log?.(`check start app=${snap.bundleId} len=${sent.text.length}`);
       void this.check(sent.start, sent.text, field);
     } catch {
@@ -135,11 +171,29 @@ export class AutoChecker {
     }
   }
 
-  private publish(snap: Snapshot) {
-    const marks = this.issues.flatMap((it, i) => {
-      const b = snap.bounds?.[i];
+  /** Same sentence typed again (or retyped elsewhere in the field): re-add its cached issues without a new request. */
+  private restore(offset: number, sentence: string) {
+    const spans = this.checked.get(sentence);
+    if (!spans?.length) return;
+    const inside = (i: Issue) => i.start >= offset && i.end <= offset + sentence.length;
+    if (this.issues.some(inside)) return;
+    this.merge(offset, sentence, spans);
+  }
+
+  private merge(offset: number, sentence: string, spans: Omit<Issue, "id">[]) {
+    const fresh = spans.map((sp): Issue => ({ ...sp, id: this.nextId++, start: offset + sp.start, end: offset + sp.end }));
+    this.issues = revalidate([...this.issues.filter((i) => i.end <= offset || i.start >= offset + sentence.length), ...fresh], this.lastText);
+  }
+
+  /** Bounds come back in the order of `asked`; only issues that have not moved since keep their mark this tick. */
+  private publish(snap: Snapshot, asked: Issue[]) {
+    const marks = this.issues.flatMap((it) => {
+      const i = asked.findIndex((a) => a.id === it.id && a.start === it.start);
+      const b = i === -1 ? null : snap.bounds?.[i];
       return b ? [{ id: it.id, x: b.x, y: b.y, w: b.w, h: b.h }] : [];
     });
+    const sum = `marks=${marks.length}/${this.issues.length} bounds=${snap.bounds?.length ?? "-"}`;
+    if (this.issues.length && sum !== this.loggedMarks) { this.loggedMarks = sum; this.d.log?.(sum); }
     this.d.onMarks(marks);
   }
 
@@ -147,29 +201,45 @@ export class AutoChecker {
     this.checking = true;
     try {
       const s = this.d.settings();
+      const popup = s.autoCheckMode === "popup" && !!this.d.onSentence;
+      const before = this.lastText;
+      if (popup) this.setLoading({ start: offset, length: sentence.length });
       const engine = await this.d.makeEngine();
-      const r = await engine.check({ text: sentence, dictionary: s.dictionary, explain: false });
+      // Reasons cost ~1.5 s; only the popup shows them up front.
+      const r = await engine.check({ text: sentence, dictionary: s.dictionary, explain: popup && s.explain, explainLang: s.explainLang });
       this.d.log?.(`check done changed=${r.corrected !== sentence} stale=${field !== this.field}`);
       if (field !== this.field || r.corrected === sentence) return;
       const notes = r.notes ?? [];
-      const fresh = diffSpans(sentence, r.corrected).filter((sp) => sp.original.trim()).map((sp, i): Issue => {
+      const spans = diffSpans(sentence, r.corrected).filter((sp) => sp.original.trim()).map((sp, i) => {
         const w = sp.original.trim().toLowerCase();
         return {
-          id: this.nextId++,
-          start: offset + sp.start,
-          end: offset + sp.end,
+          start: sp.start,
+          end: sp.end,
           original: sp.original,
           replacement: sp.replacement,
           reason: notes.find((n) => n.toLowerCase().startsWith(w)) ?? (notes.length === 1 ? notes[0] : notes[i]),
         };
       });
-      this.d.log?.(`issues=${fresh.length}`);
-      this.issues = revalidate([...this.issues.filter((i) => i.end <= offset || i.start >= offset + sentence.length), ...fresh], this.lastText);
+      this.d.log?.(`issues=${spans.length}`);
+      if (this.checked.has(sentence)) this.checked.set(sentence, spans);
+      this.merge(offset, sentence, spans);
+      const first = this.issues.find((i) => i.start >= offset && i.end <= offset + sentence.length);
+      if (popup && first && this.lastText === before) {
+        this.loading = false; // the popup takes over the hint's place
+        this.d.onSentence!({ start: offset, original: sentence, corrected: r.corrected, notes, firstId: first.id });
+      }
     } catch (e) {
       this.d.log?.(`check error ${(e as Error).message}`);
       // network/engine errors are silent in the background (sentence stays cached: no retry loop); the manual hotkey still reports them
     } finally {
       this.checking = false;
+      this.setLoading(null);
     }
+  }
+
+  private setLoading(at: { start: number; length: number } | null) {
+    if (!at && !this.loading) return;
+    this.loading = !!at;
+    this.d.onLoading?.(at);
   }
 }

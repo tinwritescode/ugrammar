@@ -51,7 +51,7 @@ async function shot(name: string, win: BrowserWindow) {
 
 async function popover(name: string, p: PopoverPayload) {
   const win = new BrowserWindow({ width: 460, height: 260, show: false, frame: false, transparent: true, webPreferences });
-  ipcMain.once("popover:resize", (_e, h: number) => win.setSize(460, Math.ceil(h)));
+  ipcMain.once("popover:resize", (_e, h: number, w?: number) => win.setSize(Math.ceil(w ?? 460), Math.ceil(h)));
   await win.loadFile(join(root, "dist/renderer/popover.html"));
   win.webContents.send("popover:show", p);
   await shot(name, win);

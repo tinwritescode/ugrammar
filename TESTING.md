@@ -59,4 +59,7 @@ Automated: `bun test` (engine, diff, settings, flow) and `bun run typecheck`.
 - Enable "Hotkey fixes at once": ⌥⌘G replaces directly; ⌘Z restores.
 - ⌥⌘T on a selection → menu Formal/Friendly/Short → diff popover.
 - Fix the same mistake twice → Settings → Insights lists it.
-- Chrome/Electron fields: AX range bounds may be missing; then no underline (use the hotkey).
+- Slack / Claude desktop / Chrome contenteditable: type `She dont like it.` → underline under "dont" (bounds come from the AXStaticText leaves). Click a toolbar button and back: underline returns, no re-check.
+- Settings → "When a finished sentence has mistakes" → "Show the fix with explanations at once": type `She dont like it.` and stop → "Checking…" spinner under the sentence, then diff popover with reasons opens under the sentence; Accept rewrites only that sentence, Esc/Dismiss leaves it and hides its underlines. Keep typing right after the period → spinner closes, no popover, underline only.
+- Delete the sentence and type it again: underline comes back at once (cached result, no new request); a dismissed fix does not come back.
+- Debug: `grep auto /tmp/proofy-debug.log` — `marks=N/M` = drawn/known issues; `visible=false why=…` names the failing step (role, no value, no range).

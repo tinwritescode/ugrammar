@@ -9,7 +9,7 @@ import { FixFlow, type Status } from "./flow";
 import { HelperClient, type SelectionReply } from "./helper";
 import { SettingsStore } from "./settings";
 import { TypingBadge } from "./badge";
-import { AutoChecker, type Issue, type Snapshot } from "./autocheck";
+import { AutoChecker, type Issue, type SentenceFix, type Snapshot } from "./autocheck";
 import { UnderlineOverlay } from "./underline";
 import { InsightStore } from "./insights";
 import { diffWords } from "../shared/diff";
@@ -113,10 +113,10 @@ function closePopover(choice: "accept" | "dismiss" = "dismiss") {
   r?.(choice);
 }
 
-function ensurePopover(): BrowserWindow {
+const POPOVER_W = 460;  function ensurePopover(): BrowserWindow {
   if (popover && !popover.isDestroyed()) return popover;
   popover = new BrowserWindow({
-    width: 460, height: 200, show: false, frame: false, resizable: false, movable: true,
+    width: POPOVER_W, height: 200, show: false, frame: false, resizable: false, movable: true,
     alwaysOnTop: true, skipTaskbar: true, hasShadow: true, transparent: true, type: "panel", focusable: false,
     webPreferences: { preload: join(root, "dist/preload.cjs"), sandbox: true, contextIsolation: true },
   });
@@ -150,6 +150,7 @@ function placePopover(win: BrowserWindow, fresh?: Anchor | true) {
 async function showPopover(p: PopoverPayload, anchor?: Anchor) {
   const win = ensurePopover();
   if (win.webContents.isLoading()) await new Promise<void>((r) => win.webContents.once("did-finish-load", () => r()));
+  win.setSize(POPOVER_W, win.getSize()[1]); // measure at full width; a pill shrinks it back
   win.webContents.send("popover:show", p);
   placePopover(win, anchor ?? true);
   win.showInactive(); // keep the target app focused so write-back lands there
@@ -171,15 +172,15 @@ function showMessage(message: string) {
   messageTimer = setTimeout(() => closePopover(), 2200);
 }
 
-function showLoading() {
+function showLoading(anchor?: Anchor) {
   closePopover();
-  void showPopover({ kind: "loading", message: "Checking…" });
+  void showPopover({ kind: "loading", message: "Checking…" }, anchor);
 }
 
 ipcMain.on("popover:action", (_e, a: "accept" | "dismiss") => closePopover(a));
-ipcMain.on("popover:resize", (_e, h: number) => {
+ipcMain.on("popover:resize", (_e, h: number, w?: number) => {
   if (popover && !popover.isDestroyed() && h > 0) {
-    popover.setSize(460, Math.min(Math.ceil(h), 600));
+    popover.setSize(w ? Math.min(Math.ceil(w), POPOVER_W) : POPOVER_W, Math.min(Math.ceil(h), 600));
     placePopover(popover);
   }
 });
@@ -205,7 +206,7 @@ const flow = new FixFlow({
   notify,
   showDiff,
   showMessage,
-  showLoading,
+  showLoading: () => { loadingSeq++; loadingShown = false; showLoading(); }, // the manual check owns the popover now
   hideLoading: () => closePopover(),
   onApplied: (o, c, n) => insights.record(o, c, n),
 });
@@ -219,15 +220,69 @@ const auto = new AutoChecker({
   makeEngine: () => makeEngine(30000), // background: slow gateways need more than the 10s hotkey default
   log: (m) => debug(`auto ${m}`),
   onMarks: (marks) => (cardOpen ? undefined : underlines.set(marks)),
+  onSentence: (fix) => void openSentencePopup(fix),
+  onLoading: (at) => void autoLoading(at),
 });
+
+let loadingSeq = 0;
+let loadingShown = false;
+
+/** Popup mode: "Checking…" under the sentence; never over a card or a manual check. */
+async function autoLoading(at: { start: number; length: number } | null) {
+  const seq = ++loadingSeq;
+  if (!at) {
+    if (loadingShown && !popoverResolve) closePopover();
+    loadingShown = false;
+    return;
+  }
+  if (cardOpen || popoverResolve) return;
+  const anchor = await rangeAnchor(at.start + Math.max(0, at.length - 1), Math.min(1, at.length)); // sentence end, by the caret
+  if (seq !== loadingSeq || cardOpen || popoverResolve) return; // hidden or replaced meanwhile
+  loadingShown = true;
+  showLoading(anchor);
+}
+
+/** Anchor below a text range (above when there is no room), from fresh AX bounds. */
+async function rangeAnchor(loc: number, len: number, known?: { x: number; y: number; w: number; h: number }) {
+  let r = known ?? null;
+  if (!r) {
+    const snap = await helper.request<Snapshot>("snapshot", { excluded: store.get().excludedApps, ranges: [{ loc, len }] }, 3000);
+    r = snap.ok && snap.visible ? snap.bounds?.[0] ?? null : null;
+  }
+  return r ? { x: r.x + r.w / 2, y: r.y + r.h + 6, altY: r.y - 6 } : undefined;
+}
+
+const issueAnchor = (it: Issue) => rangeAnchor(it.start, it.end - it.start, underlines.bounds(it.id));
+
+/** Popup mode: the whole sentence's fix with reasons, opened as soon as the check comes back. */
+async function openSentencePopup(fix: SentenceFix) {
+  const it = auto.issues.find((i) => i.id === fix.firstId);
+  if (!it || cardOpen || popoverResolve) return; // never cover a card or a manual check
+  cardOpen = true;
+  loadingSeq++; // a pending hint must not land over the popup
+  loadingShown = false;
+  try {
+    const choice = await showDiff({
+      kind: "diff", original: fix.original, corrected: fix.corrected, ops: diffWords(fix.original, fix.corrected),
+      appName: auto.appName, notes: fix.notes.length ? fix.notes : undefined,
+    }, await issueAnchor(it));
+    if (choice === "dismiss") return auto.resolveSentence(fix.start, fix.original.length, false);
+    const w = await helper.request("replace_range", { loc: fix.start, len: fix.original.length, text: fix.corrected, expect: fix.original, pid: auto.pid }, 5000);
+    debug(`auto popup write ok=${w.ok} err=${w.error ?? "-"}`);
+    auto.resolveSentence(fix.start, fix.original.length, w.ok);
+    if (w.ok) insights.record(fix.original, fix.corrected, fix.notes);
+    else notify(w.error === "stale" ? "Text changed; fix skipped." : `Could not replace (${w.error}). Try the hotkey instead.`);
+  } finally {
+    cardOpen = false;
+  }
+}
 
 async function openIssueCard(id: number) {
   const it: Issue | undefined = auto.issues.find((i) => i.id === id);
   if (!it || cardOpen) return;
   cardOpen = true;
   try {
-    const marks = underlines.bounds(id);
-    const anchor = marks ? { x: marks.x + marks.w / 2, y: marks.y + marks.h + 6, altY: marks.y - 6 } : undefined;
+    const anchor = await issueAnchor(it);
     const ops = diffWords(it.original, it.replacement);
     const choice = await showDiff({
       kind: "diff", original: it.original, corrected: it.replacement, ops, appName: auto.appName,

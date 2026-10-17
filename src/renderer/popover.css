@@ -9,6 +9,8 @@ del { background: var(--expense-bg); color: var(--expense); border-radius: 6px; 
 .bar { display: flex; gap: 8px; align-items: center; margin-top: 12px; -webkit-app-region: no-drag; }
 .hint { flex: 1; color: var(--muted); font-size: 11px; }
 .msg { text-align: center; padding: 4px 0; font-weight: 600; }
-.loading { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 4px 0; color: var(--muted); font-weight: 600; }
-.spin { width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin .7s linear infinite; }
+#card.pill { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px 6px 10px; border-radius: 999px; color: var(--muted); font-size: 12px; font-weight: 600; white-space: nowrap; }
+#card.pop { transform-origin: top center; animation: pop .22s cubic-bezier(.2, .9, .3, 1.25); }
+@keyframes pop { from { opacity: 0; transform: scale(.82) translateY(-4px); } }
+.spin { width: 11px; height: 11px; border: 2px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin .7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

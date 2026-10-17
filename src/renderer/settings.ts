@@ -53,6 +53,7 @@ function load(v: SettingsView) {
   excluded = [...s.excludedApps];
   $<HTMLInputElement>("showBadge").checked = s.showBadge;
   $<HTMLInputElement>("autoCheck").checked = s.autoCheck;
+  $<HTMLSelectElement>("autoCheckMode").value = s.autoCheckMode;
   $<HTMLInputElement>("quickFix").checked = s.quickFix;
   $<HTMLInputElement>("explain").checked = s.explain;
   if (![...langSel.options].some((o) => o.value === s.explainLang)) langSel.add(new Option(s.explainLang, s.explainLang));
@@ -114,6 +115,7 @@ $("save").onclick = async () => {
     model: $<HTMLInputElement>("model").value,
     showBadge: $<HTMLInputElement>("showBadge").checked,
     autoCheck: $<HTMLInputElement>("autoCheck").checked,
+    autoCheckMode: $<HTMLSelectElement>("autoCheckMode").value === "popup" ? "popup" : "underline",
     quickFix: $<HTMLInputElement>("quickFix").checked,
     explain: $<HTMLInputElement>("explain").checked,
     explainLang: langSel.value,

@@ -10,6 +10,7 @@ Direction: Grammarly-like auto-check, underline in place + small card. Both pers
 - Helper: watch typing (AX value/selection change or CGEventTap keyDown, needs Input Monitoring) and report the last sentence range + text.
 - Engine: return per-error spans (original, replacement, reason) instead of whole-text diff; keep `<corrected>` fallback.
 - Setting: `autoCheck` (default off), per-app exclusion already applies; skip secure fields.
+- Mode `autoCheckMode`: `underline` (default) or `popup` (opens the sentence diff + reasons right away, only if the user has not typed past it).
 - Cost guard: debounce, skip < 3 words, cache by sentence hash, cancel when user keeps typing.
 
 ## Phase 2: underline in place + small card

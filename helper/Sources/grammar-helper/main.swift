@@ -194,29 +194,70 @@ func cfRangeValue(_ loc: Int, _ len: Int) -> AXValue? {
     return AXValueCreate(.cfRange, &cf)
 }
 
+/// Bounds of a range that sits on one text line; nil when the app has none (or reports the whole field/window).
+func lineRect(_ el: AXUIElement, _ loc: Int, _ len: Int) -> CGRect? {
+    guard let v = cfRangeValue(loc, len) else { return nil }
+    var b: CFTypeRef?
+    var rect = CGRect.zero
+    guard AXUIElementCopyParameterizedAttributeValue(el, kAXBoundsForRangeParameterizedAttribute as CFString, v, &b) == .success,
+          let b = b, CFGetTypeID(b) == AXValueGetTypeID(), AXValueGetValue(b as! AXValue, .cgRect, &rect),
+          rect.height > 0, rect.height < 60, rect.width > 0 else { return nil }
+    return rect
+}
+
+/// AXStaticText descendants in document order, each located in `value` (UTF-16 offsets); paragraph breaks exist only in `value`.
+func textLeaves(_ root: AXUIElement, _ value: String) -> [(el: AXUIElement, start: Int, len: Int)] {
+    let full = value as NSString
+    var out: [(el: AXUIElement, start: Int, len: Int)] = []
+    var cursor = 0
+    var visited = 0
+    func walk(_ e: AXUIElement) {
+        visited += 1
+        if visited > 3000 { return }
+        if axString(e, kAXRoleAttribute as String) == "AXStaticText", let t = axString(e, kAXValueAttribute as String), !t.isEmpty {
+            let r = full.range(of: t, options: [], range: NSRange(location: cursor, length: full.length - cursor))
+            if r.location != NSNotFound { out.append((e, r.location, r.length)); cursor = r.location + r.length }
+            return
+        }
+        var kids: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(e, kAXChildrenAttribute as CFString, &kids) == .success, let list = kids as? [AXUIElement] else { return }
+        for k in list { walk(k) }
+    }
+    walk(root)
+    return out
+}
+
 /// Text, caret and per-range bounds of the focused field, for auto-check and underlines.
 func handleSnapshot(_ id: Any?, _ msg: [String: Any]) {
     guard axTrusted(), let app = NSWorkspace.shared.frontmostApplication else { return reply(id, true, ["visible": false]) }
     let bundle = app.bundleIdentifier ?? ""
     if ((msg["excluded"] as? [String]) ?? []).contains(bundle) { return reply(id, true, ["visible": false]) }
-    guard let el = focusedElement(), !isSecure(el),
-          ["AXTextField", "AXTextArea", "AXComboBox", "AXWebArea"].contains(axString(el, kAXRoleAttribute as String) ?? ""),
-          let value = axString(el, kAXValueAttribute as String), value.utf16.count <= 20000 else {
-        return reply(id, true, ["visible": false])
+    guard let el = focusedElement() else { return reply(id, true, ["visible": false, "reason": "no_focus"]) }
+    let role = axString(el, kAXRoleAttribute as String) ?? ""
+    guard !isSecure(el), ["AXTextField", "AXTextArea", "AXComboBox", "AXWebArea"].contains(role) else {
+        return reply(id, true, ["visible": false, "reason": "role:\(role)"])
+    }
+    guard let value = axString(el, kAXValueAttribute as String), value.utf16.count <= 20000 else {
+        return reply(id, true, ["visible": false, "reason": "no_value:\(role)"])
     }
     var rangeRef: CFTypeRef?
     var cf = CFRange(location: 0, length: 0)
     guard AXUIElementCopyAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, &rangeRef) == .success,
-          let rr = rangeRef, AXValueGetValue(rr as! AXValue, .cfRange, &cf) else { return reply(id, true, ["visible": false]) }
+          let rr = rangeRef, AXValueGetValue(rr as! AXValue, .cfRange, &cf) else { return reply(id, true, ["visible": false, "reason": "no_range:\(role)"]) }
     var bounds: [Any] = []
+    var leaves: [(el: AXUIElement, start: Int, len: Int)]? = nil
     for r in (msg["ranges"] as? [[String: Any]]) ?? [] {
-        guard let loc = r["loc"] as? Int, let len = r["len"] as? Int, let v = cfRangeValue(loc, len) else { bounds.append(NSNull()); continue }
-        var b: CFTypeRef?
-        var rect = CGRect.zero
-        if AXUIElementCopyParameterizedAttributeValue(el, kAXBoundsForRangeParameterizedAttribute as CFString, v, &b) == .success,
-           let b = b, CFGetTypeID(b) == AXValueGetTypeID(), AXValueGetValue(b as! AXValue, .cgRect, &rect), rect.height > 0, rect.height < 60 {
-            bounds.append(["x": rect.origin.x, "y": rect.origin.y, "w": rect.size.width, "h": rect.size.height])
-        } else { bounds.append(NSNull()) }
+        guard let loc = r["loc"] as? Int, let len = r["len"] as? Int else { bounds.append(NSNull()); continue }
+        var rect = lineRect(el, loc, len)
+        if rect == nil {
+            // Chromium contenteditable answers only on its AXStaticText leaves, with leaf-local offsets.
+            if leaves == nil { leaves = textLeaves(el, value) }
+            if let lf = leaves!.first(where: { loc >= $0.start && loc < $0.start + $0.len }) {
+                rect = lineRect(lf.el, loc - lf.start, min(len, lf.start + lf.len - loc))
+            }
+        }
+        if let rect = rect { bounds.append(["x": rect.origin.x, "y": rect.origin.y, "w": rect.size.width, "h": rect.size.height]) }
+        else { bounds.append(NSNull()) }
     }
     reply(id, true, ["visible": true, "text": value, "caret": cf.location, "selLen": cf.length, "pid": Int(app.processIdentifier),
                      "bundleId": bundle, "appName": app.localizedName ?? "", "bounds": bounds])

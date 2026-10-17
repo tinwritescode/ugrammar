@@ -11,8 +11,12 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEl
 
 function render(p: PopoverPayload) {
   card.replaceChildren();
-  if (p.kind === "loading") {
-    card.append(el("div", { className: "loading" }, el("span", { className: "spin" }), p.message ?? "Checking…"));
+  const pill = p.kind === "loading";
+  card.className = pill ? "pill" : "";
+  void card.offsetWidth; // restart the pop-in animation
+  card.classList.add("pop");
+  if (pill) {
+    card.append(el("span", { className: "spin" }), p.message ?? "Checking…");
   } else if (p.kind === "message") {
     card.append(el("div", { className: "msg" }, p.message ?? ""));
   } else {
@@ -27,7 +31,7 @@ function render(p: PopoverPayload) {
     if (p.notes?.length) card.append(el("ul", { className: "notes" }, ...p.notes.map((n) => el("li", {}, n))));
     card.append(el("div", { className: "bar" }, el("span", { className: "hint" }, "⌘↩ accept · esc dismiss"), dismiss, accept));
   }
-  requestAnimationFrame(() => proofy.popoverResize(card.offsetHeight + 14));
+  requestAnimationFrame(() => proofy.popoverResize(card.offsetHeight + 14, pill ? card.offsetWidth + 14 : undefined));
 }
 
 proofy.onPopover(render);
