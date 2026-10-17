@@ -1,6 +1,6 @@
 {
   "name": "ugrammar",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Menu-bar grammar fixer for macOS",
   "author": "Tín Nguyễn (https://github.com/tinwritescode)",
   "homepage": "https://github.com/tinwritescode/ugrammar",
@@ -18,7 +18,8 @@
     "test": "cargo test --manifest-path core/Cargo.toml && bun run helper && cargo test --manifest-path src-tauri/Cargo.toml",
     "typecheck": "tsc --noEmit",
     "package": "bun run helper && tauri build --bundles app && rm -f release/ugrammar.zip && mkdir -p release && ditto -c -k --keepParent src-tauri/target/release/bundle/macos/ugrammar.app release/ugrammar.zip",
-    "release": "bun run scripts/release.ts"
+    "release": "bun run scripts/release.ts",
+    "icon": "swift scripts/icon.swift"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2",
