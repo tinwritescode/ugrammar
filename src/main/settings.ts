@@ -24,7 +24,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   endpoint: "http://localhost:20128/v1",
-  model: "cx/gpt-6.1-sol",
+  model: "xpiki/gpt-6.1-sol",
   timeoutMs: 10000,
   dictionary: [],
   excludedApps: [
