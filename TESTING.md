@@ -41,7 +41,8 @@ Automated: `bun test` (engine, diff, settings, flow) and `bun run typecheck`.
 - [ ] Quit stops the helper (`pgrep grammar-helper` empty).
 
 ## Typing badge
-- [ ] Click into a TextEdit/Notes text area: a small green dot appears beside the caret and pulses while you type/move.
+- [ ] Click into a TextEdit/Notes text area: no dot yet. Type a character: dot appears beside the caret, pulses while typing, hides ~8s after the last change (stays while hovered).
+- [ ] Click the dot with nothing selected: whole field is checked (standard text fields only; elsewhere select text and use ⌥⌘G).
 - [ ] In Chrome/Electron apps (no caret bounds) the dot sits in the bottom-right corner of the focused field.
 - [ ] Dot is hidden in password fields, excluded apps, when paused, and without Accessibility permission.
 - [ ] Press ⌥⌘G: dot turns into a spinner while checking.

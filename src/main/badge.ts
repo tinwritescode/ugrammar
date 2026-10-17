@@ -1,6 +1,8 @@
 import { BrowserWindow, screen } from "electron";
 import { BADGE_SIZE, badgePosition, clampToArea, type CaretRect } from "../shared/badge";
 
+const KEEP_MS = 8000;
+
 export type BadgeState = "idle" | "checking";
 
 const PAGE = `<!doctype html><meta charset="utf-8"><style>
@@ -18,6 +20,8 @@ export class TypingBadge {
   private last = "";
   private state: BadgeState = "idle";
   private busy = false;
+  private lastMove = 0;
+  private seen = false;
 
   constructor(private onClick: () => void, private fetchCaret: () => Promise<(CaretRect & { visible: boolean }) | null>) {}
 
@@ -66,7 +70,7 @@ export class TypingBadge {
     this.busy = true;
     try {
       const r = await this.fetchCaret();
-      if (!r || !r.visible) return this.hide();
+      if (!r || !r.visible) { this.seen = false; return this.hide(); }
       const win = this.ensure();
       const pos = badgePosition(r);
       const area = screen.getDisplayNearestPoint(pos).workArea;
@@ -74,6 +78,14 @@ export class TypingBadge {
       const key = `${r.x},${r.y},${r.w},${r.h}`;
       const moved = key !== this.last;
       this.last = key;
+      const now = Date.now();
+      // Show only after the first change in a field (i.e. typing), and for a few seconds after the last one.
+      if (moved && this.seen) this.lastMove = now;
+      this.seen = true;
+      const cur = screen.getCursorScreenPoint();
+      const b = win.getBounds();
+      const hovering = cur.x >= b.x && cur.x <= b.x + b.width && cur.y >= b.y && cur.y <= b.y + b.height;
+      if (this.state !== "checking" && !hovering && now - this.lastMove > KEEP_MS) return this.hide();
       win.setPosition(p.x, p.y);
       if (!win.isVisible()) win.showInactive();
       this.paint(moved);

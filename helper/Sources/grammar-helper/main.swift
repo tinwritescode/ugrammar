@@ -131,7 +131,7 @@ func handleRead(_ id: Any?, _ msg: [String: Any]) {
     if let el = el, let sel = axString(el, kAXSelectedTextAttribute as String), !sel.isEmpty {
         return reply(id, true, appInfo.merging(["text": sel, "method": "ax"]) { a, _ in a })
     }
-    if (msg["selectAll"] as? Bool) == true {
+    if (msg["selectAll"] as? Bool) == true, let role = el.flatMap({ axString($0, kAXRoleAttribute as String) }), ["AXTextField", "AXTextArea"].contains(role) {
         postKey(0, flags: .maskCommand) // Cmd+A: no selection, so check the whole field
         sleepMs(80)
         if let el = el, let sel = axString(el, kAXSelectedTextAttribute as String), !sel.isEmpty {
