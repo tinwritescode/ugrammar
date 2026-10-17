@@ -12,7 +12,7 @@ export interface Status {
 
 export type FixOutcome =
   | "paused" | "busy" | "skipped" | "no_selection" | "needs_permission"
-  | "error" | "unchanged" | "dismissed" | "applied" | "write_failed";
+  | "error" | "unchanged" | "too_short" | "dismissed" | "applied" | "write_failed";
 
 export interface FlowDeps {
   settings(): Settings;
@@ -65,6 +65,12 @@ export class FixFlow {
         this.d.showMessage(msg);
         this.idle();
         return sel.error === "no_selection" ? "no_selection" : "skipped";
+      }
+
+      if (sel.text.trim().split(/\s+/).length < 3) {
+        this.d.showMessage("Too short to check (under 3 words).");
+        this.idle();
+        return "too_short";
       }
 
       let corrected: string;

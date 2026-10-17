@@ -36,6 +36,11 @@ describe("FixFlow", () => {
     expect(log.loading).toBe(1);
     expect(log.hidden).toBe(1);
   });
+  test("under 3 words skips the engine", async () => {
+    const { flow, log } = setup({ readSelection: async () => ({ ok: true, text: "Hi there", method: "ax", pid: 7, appName: "Notes" }) });
+    expect(await flow.run()).toBe("too_short");
+    expect(log.engineCalls).toBe(0);
+  });
   test("dismiss never writes", async () => {
     const { flow, log } = setup({ showDiff: async () => "dismiss" });
     expect(await flow.run()).toBe("dismissed");
