@@ -1,5 +1,5 @@
-import type { ProofyApi, PopoverPayload } from "../shared/ipc";
-declare const proofy: ProofyApi;
+import { proofy } from "./bridge";
+import type { PopoverPayload } from "../shared/ipc";
 
 const card = document.getElementById("card")!;
 

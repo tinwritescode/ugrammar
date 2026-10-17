@@ -4,3 +4,6 @@ helper/.build
 *.log
 .DS_Store
 release
+target
+src-tauri/gen
+src-tauri/binaries

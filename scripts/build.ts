@@ -1,19 +1,13 @@
 import { cpSync, mkdirSync, rmSync } from "node:fs";
 
 rmSync("dist", { recursive: true, force: true });
-mkdirSync("dist/renderer", { recursive: true });
+mkdirSync("dist", { recursive: true });
 
-async function bundle(opts: Parameters<typeof Bun.build>[0]) {
-  const r = await Bun.build(opts);
-  if (!r.success) {
-    for (const l of r.logs) console.error(l);
-    process.exit(1);
-  }
+const pages = ["popover", "tray", "badge", "underline"];
+const r = await Bun.build({ entrypoints: pages.map((p) => `src/renderer/${p}.ts`), outdir: "dist", target: "browser", format: "iife" });
+if (!r.success) {
+  for (const l of r.logs) console.error(l);
+  process.exit(1);
 }
-
-await bundle({ entrypoints: ["src/main/main.ts"], outdir: "dist", target: "node", format: "esm", external: ["electron"] });
-await bundle({ entrypoints: ["src/main/shots.ts"], outdir: "dist", target: "node", format: "esm", external: ["electron"] });
-await bundle({ entrypoints: ["src/main/preload.ts"], outdir: "dist", target: "node", format: "cjs", external: ["electron"], naming: "preload.cjs" });
-await bundle({ entrypoints: ["src/renderer/popover.ts", "src/renderer/tray.ts"], outdir: "dist/renderer", target: "browser", format: "iife" });
-for (const f of ["popover.html", "popover.css", "tray.html", "tray.css", "theme.css"]) cpSync(`src/renderer/${f}`, `dist/renderer/${f}`);
+for (const f of [...pages.flatMap((p) => [`${p}.html`, `${p}.css`]), "theme.css"]) cpSync(`src/renderer/${f}`, `dist/${f}`);
 console.log("built");
