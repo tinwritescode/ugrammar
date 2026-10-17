@@ -35,6 +35,15 @@
     "category": "Productivity",
     "shortDescription": "Menu-bar grammar fixer for macOS",
     "longDescription": "Select text anywhere, press a hotkey, review the diff, and accept. Auto-check can also review each sentence as you finish typing it.",
-    "homepage": "https://github.com/tinwritescode/ugrammar"
+    "homepage": "https://github.com/tinwritescode/ugrammar",
+    "createUpdaterArtifacts": false
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENCQkVBNzEzNEJCNEQzQzAKUldUQTA3UkxFNmUreXdheVd5ZVUveUtDcnBPK1VpNm13VFR5OVJBa21pdjJOZ25uTFczcE8zRU4K",
+      "endpoints": [
+        "https://github.com/tinwritescode/ugrammar/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

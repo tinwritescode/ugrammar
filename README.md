@@ -20,9 +20,12 @@ Layout:
 
 ```bash
 bun run package   # -> release/ugrammar.zip (ugrammar.app, arm64, ad-hoc signed)
+bun run release   # -> release/: signed app zips, ugrammar.app.tar.gz, its .sig, latest.json
 ```
 
-Ad-hoc signed, not notarized. Open it the first time with right-click → Open, then grant Accessibility to ugrammar.
+Not notarized. Open it the first time with right-click → Open, then grant Accessibility to ugrammar.
+
+`bun run release` signs with the self-signed certificate in `~/.ugrammar-signing` (`key.pem`, `cert.pem`) through `rcodesign` (`cargo install apple-codesign`), and signs the updater archive with `updater.key`. Accessibility grants follow the certificate, so they survive updates; an ad-hoc build loses them. Upload everything in `release/` to the GitHub release tagged `v<version>`. Installed apps read `latest.json` from the latest release every six hours, install the update in place, and offer a restart from the menu bar panel. Back up `~/.ugrammar-signing`: without those keys, installed apps reject new updates.
 
 ## Author
 

@@ -48,9 +48,10 @@ export interface TrayState {
   hotkey: string;
   insights: Insight[];
   hasApiKey: boolean;
+  update?: string;
 }
 
-export type TrayAction = "quit" | "ax" | "github" | Tone;
+export type TrayAction = "quit" | "ax" | "github" | "restart" | Tone;
 
 export interface TestResult {
   ok: boolean;
