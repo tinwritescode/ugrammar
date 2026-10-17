@@ -151,3 +151,10 @@ describe("parseNotes", () => {
 test("parseNotes splits on <br>", () => {
   expect(parseNotes("<notes>a → b: x<br>c → d: y<br/>e</notes>")).toEqual(["a → b: x", "c → d: y", "e"]);
 });
+
+test("tone and explanation language reach the prompt", () => {
+  const m = buildMessages("hello there friend", [], true, "Spanish", "formal");
+  const all = m.map((x: { content: string }) => x.content).join("\n");
+  expect(all).toContain("Spanish");
+  expect(all.toLowerCase()).toContain("formal");
+});

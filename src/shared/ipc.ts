@@ -15,6 +15,7 @@ export interface SettingsView {
   settings: Settings;
   hasApiKey: boolean;
   axTrusted: boolean;
+  insights: { from: string; to: string; count: number; note?: string }[];
 }
 
 export interface TestResult {
@@ -28,6 +29,8 @@ export interface ProofyApi {
   popoverResize(height: number): void;
   badgeClick(): void;
   badgeMenu(): void;
+  underlineClick(): void;
+  clearInsights(): Promise<SettingsView>;
   getSettings(): Promise<SettingsView>;
   saveSettings(patch: Partial<Settings>): Promise<SettingsView>;
   setApiKey(key: string): Promise<SettingsView>;

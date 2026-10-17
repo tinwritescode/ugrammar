@@ -15,6 +15,9 @@ export interface Settings {
   hotkey: Hotkey;
   paused: boolean;
   explain: boolean; // short Vietnamese reason per fix (slower)
+  autoCheck: boolean; // check each sentence when its end is typed (. ? ! Enter)
+  quickFix: boolean; // hotkey replaces at once, no popover (⌘Z undoes)
+  explainLang: string; // language of the per-fix reasons
   showBadge: boolean; // floating badge next to the typing caret (off by default: distracting)
   firstRunAcknowledged: boolean;
 }
@@ -39,6 +42,9 @@ export const DEFAULT_SETTINGS: Settings = {
   paused: false,
   explain: true,
   showBadge: false,
+  autoCheck: false,
+  quickFix: false,
+  explainLang: "Vietnamese",
   firstRunAcknowledged: false,
 };
 
@@ -75,6 +81,9 @@ export function normalizeSettings(raw: unknown): Settings {
     paused: r.paused === true,
     explain: r.explain !== false,
     showBadge: r.showBadge === true,
+    autoCheck: r.autoCheck === true,
+    quickFix: r.quickFix === true,
+    explainLang: str(r.explainLang, d.explainLang),
     firstRunAcknowledged: r.firstRunAcknowledged === true,
   };
 }

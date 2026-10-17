@@ -189,6 +189,69 @@ func handleCaret(_ id: Any?, _ msg: [String: Any]) {
     reply(id, true, ["visible": true, "precise": precise, "selLen": selLen, "x": rect.origin.x, "y": rect.origin.y, "w": rect.size.width, "h": rect.size.height, "bundleId": bundle])
 }
 
+func cfRangeValue(_ loc: Int, _ len: Int) -> AXValue? {
+    var cf = CFRange(location: loc, length: len)
+    return AXValueCreate(.cfRange, &cf)
+}
+
+/// Text, caret and per-range bounds of the focused field, for auto-check and underlines.
+func handleSnapshot(_ id: Any?, _ msg: [String: Any]) {
+    guard axTrusted(), let app = NSWorkspace.shared.frontmostApplication else { return reply(id, true, ["visible": false]) }
+    let bundle = app.bundleIdentifier ?? ""
+    if ((msg["excluded"] as? [String]) ?? []).contains(bundle) { return reply(id, true, ["visible": false]) }
+    guard let el = focusedElement(), !isSecure(el),
+          ["AXTextField", "AXTextArea", "AXComboBox", "AXWebArea"].contains(axString(el, kAXRoleAttribute as String) ?? ""),
+          let value = axString(el, kAXValueAttribute as String), value.utf16.count <= 20000 else {
+        return reply(id, true, ["visible": false])
+    }
+    var rangeRef: CFTypeRef?
+    var cf = CFRange(location: 0, length: 0)
+    guard AXUIElementCopyAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, &rangeRef) == .success,
+          let rr = rangeRef, AXValueGetValue(rr as! AXValue, .cfRange, &cf) else { return reply(id, true, ["visible": false]) }
+    var bounds: [Any] = []
+    for r in (msg["ranges"] as? [[String: Any]]) ?? [] {
+        guard let loc = r["loc"] as? Int, let len = r["len"] as? Int, let v = cfRangeValue(loc, len) else { bounds.append(NSNull()); continue }
+        var b: CFTypeRef?
+        var rect = CGRect.zero
+        if AXUIElementCopyParameterizedAttributeValue(el, kAXBoundsForRangeParameterizedAttribute as CFString, v, &b) == .success,
+           let b = b, CFGetTypeID(b) == AXValueGetTypeID(), AXValueGetValue(b as! AXValue, .cgRect, &rect), rect.height > 0, rect.height < 60 {
+            bounds.append(["x": rect.origin.x, "y": rect.origin.y, "w": rect.size.width, "h": rect.size.height])
+        } else { bounds.append(NSNull()) }
+    }
+    reply(id, true, ["visible": true, "text": value, "caret": cf.location, "selLen": cf.length, "pid": Int(app.processIdentifier),
+                     "bundleId": bundle, "appName": app.localizedName ?? "", "bounds": bounds])
+}
+
+/// Replace one range of the focused field, only if it still holds `expect` (the user may have kept typing).
+func handleReplaceRange(_ id: Any?, _ msg: [String: Any]) {
+    guard axTrusted() else { return reply(id, false, ["error": "accessibility_not_trusted"]) }
+    guard let loc = msg["loc"] as? Int, let len = msg["len"] as? Int, let text = msg["text"] as? String, let expect = msg["expect"] as? String else {
+        return reply(id, false, ["error": "bad_args"])
+    }
+    if let pid = msg["pid"] as? Int, NSWorkspace.shared.frontmostApplication?.processIdentifier != pid_t(pid) {
+        return reply(id, false, ["error": "focus_changed"])
+    }
+    guard let el = focusedElement(), !isSecure(el), let value = axString(el, kAXValueAttribute as String) else {
+        return reply(id, false, ["error": "no_field"])
+    }
+    let u = Array(value.utf16)
+    guard loc >= 0, loc + len <= u.count, String(utf16CodeUnits: Array(u[loc..<(loc + len)]), count: len) == expect else {
+        return reply(id, false, ["error": "stale"])
+    }
+    var oldCaret = CFRange(location: loc + len, length: 0)
+    var rr: CFTypeRef?
+    if AXUIElementCopyAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, &rr) == .success, let r = rr { _ = AXValueGetValue(r as! AXValue, .cfRange, &oldCaret) }
+    guard let sel = cfRangeValue(loc, len),
+          AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, sel) == .success,
+          AXUIElementSetAttributeValue(el, kAXSelectedTextAttribute as CFString, text as CFTypeRef) == .success else {
+        return reply(id, false, ["error": "range_unsupported"])
+    }
+    let delta = text.utf16.count - len
+    let newCaret = oldCaret.location >= loc + len ? oldCaret.location + delta : loc + text.utf16.count
+    if let c = cfRangeValue(max(0, newCaret), 0) { AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, c) }
+    reply(id, true)
+}
+
 func handleWrite(_ id: Any?, _ msg: [String: Any]) {
     guard axTrusted() else { return reply(id, false, ["error": "accessibility_not_trusted"]) }
     guard let text = msg["text"] as? String else { return reply(id, false, ["error": "missing_text"]) }
@@ -251,7 +314,7 @@ func handleKeychain(_ id: Any?, _ cmd: String, _ msg: [String: Any]) {
 
 // MARK: - Hotkey
 
-var hotKeyRef: EventHotKeyRef?
+var hotKeyRefs: [UInt32: EventHotKeyRef] = [:]
 var handlerInstalled = false
 
 let keyCodes: [String: Int] = [
@@ -262,7 +325,7 @@ let keyCodes: [String: Int] = [
     "Y": kVK_ANSI_Y, "Z": kVK_ANSI_Z,
 ]
 
-func setHotkey(key: String, mods: [String]) -> String? {
+func setHotkey(key: String, mods: [String], slot: UInt32 = 1) -> String? {
     guard let code = keyCodes[key.uppercased()] else { return "unknown_key" }
     var m: UInt32 = 0
     for x in mods {
@@ -277,15 +340,19 @@ func setHotkey(key: String, mods: [String]) -> String? {
     if m == 0 { return "modifier_required" }
     if !handlerInstalled {
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in
-            emit(["event": "hotkey"])
+        InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
+            var hk = EventHotKeyID()
+            GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil, MemoryLayout<EventHotKeyID>.size, nil, &hk)
+            emit(["event": hk.id == 2 ? "hotkey2" : "hotkey"])
             return noErr
         }, 1, &spec, nil, nil)
         handlerInstalled = true
     }
-    if let r = hotKeyRef { UnregisterEventHotKey(r); hotKeyRef = nil }
-    let hkID = EventHotKeyID(signature: OSType(0x50524659), id: 1)
-    let s = RegisterEventHotKey(UInt32(code), m, hkID, GetApplicationEventTarget(), 0, &hotKeyRef)
+    if let r = hotKeyRefs[slot] { UnregisterEventHotKey(r); hotKeyRefs[slot] = nil }
+    let hkID = EventHotKeyID(signature: OSType(0x50524659), id: slot)
+    var ref: EventHotKeyRef?
+    let s = RegisterEventHotKey(UInt32(code), m, hkID, GetApplicationEventTarget(), 0, &ref)
+    if s == noErr { hotKeyRefs[slot] = ref }
     return s == noErr ? nil : "register_failed_\(s)"
 }
 
@@ -300,12 +367,14 @@ func dispatch(_ msg: [String: Any]) {
         reply(id, true, ["trusted": axTrusted(prompt: true)])
     case "set_hotkey":
         let err = DispatchQueue.main.sync {
-            setHotkey(key: (msg["key"] as? String) ?? "", mods: (msg["mods"] as? [String]) ?? [])
+            setHotkey(key: (msg["key"] as? String) ?? "", mods: (msg["mods"] as? [String]) ?? [], slot: UInt32((msg["slot"] as? Int) ?? 1))
         }
         err == nil ? reply(id, true) : reply(id, false, ["error": err!])
     case "read": handleRead(id, msg)
     case "write": handleWrite(id, msg)
     case "caret": handleCaret(id, msg)
+    case "snapshot": handleSnapshot(id, msg)
+    case "replace_range": handleReplaceRange(id, msg)
     case let c where c.hasPrefix("keychain_"): handleKeychain(id, c, msg)
     default: reply(id, false, ["error": "unknown_command"])
     }
