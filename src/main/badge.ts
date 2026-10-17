@@ -24,7 +24,7 @@ html,body{margin:0;background:transparent;overflow:hidden;cursor:pointer;user-se
 <span class="ring"></span></div>
 <script>document.addEventListener("mousedown",e=>{if(e.button===0)proofy.badgeClick()});document.addEventListener("contextmenu",e=>{e.preventDefault();proofy.badgeMenu()})</script>`;
 
-/** Small always-on-top dot beside the focused text field: shows Proofy is running and sees you typing. */
+/** Small always-on-top dot beside the focused text field: shows ugrammar is running and sees you typing. */
 export class TypingBadge {
   private win: BrowserWindow | null = null;
   private timer: NodeJS.Timeout | null = null;

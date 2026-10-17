@@ -1,6 +1,6 @@
 # Manual test checklist
 
-Setup: `bun install && bun run dev`. Menu bar shows **Pf**. First run: privacy dialog → OK. Grant Accessibility to the app that launched it (System Settings → Privacy & Security → Accessibility) when prompted, then restart. Optional: `PROOFY_DEBUG=1 bun run dev` and `tail -f /tmp/proofy-debug.log`.
+Setup: `bun install && bun run dev`. Menu bar shows **ug**. First run: privacy dialog → OK. Grant Accessibility to the app that launched it (System Settings → Privacy & Security → Accessibility) when prompted, then restart. Optional: `PROOFY_DEBUG=1 bun run dev` and `tail -f /tmp/proofy-debug.log`.
 
 Automated: `bun test` (engine, diff, settings, flow) and `bun run typecheck`.
 
@@ -28,7 +28,7 @@ Automated: `bun test` (engine, diff, settings, flow) and `bun run typecheck`.
 ## Settings (menu bar → Settings…)
 - [ ] Defaults: endpoint `http://localhost:20128/v1`, model `cx/gpt-6-luna`.
 - [ ] **Test connection** ✓ with defaults; ✕ with a bad endpoint, message shown.
-- [ ] Change model → Save → `~/Library/Application Support/Proofy/settings.json` updated → relaunch keeps it.
+- [ ] Change model → Save → `~/Library/Application Support/ugrammar/settings.json` updated → relaunch keeps it.
 - [ ] API key: enter, Save → "(stored in Keychain)"; `grep -i key settings.json` finds no secret; Keychain Access has item "Proofy / api-key".
 - [ ] Dictionary: add `Xpiki`; text containing "Xpiki" is not re-cased/changed.
 - [ ] Excluded apps: add via **Choose app…**, hotkey in that app is skipped; remove → works again.

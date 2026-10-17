@@ -17,5 +17,5 @@ Method is visible with `PROOFY_DEBUG=1 bun run dev` → `/tmp/proofy-debug.log` 
 - Chromium-based apps do not expose selected text over AX unless accessibility is enabled for them, so the clipboard path is the normal path there.
 - Looking up focus system-wide returned the popover once it was key; always scope to the target app's pid, and keep the popover non-focusable so ⌘V goes to the target.
 - Write is refused (`focus_changed`) if the frontmost pid differs from the one at read time.
-- Accessibility permission attaches to the process that launched Electron (Terminal / Claude / Electron.app in dev). If `status.trusted` is false, the menu bar shows "Pf?".
+- Accessibility permission attaches to the process that launched Electron (Terminal / Claude / Electron.app in dev). If `status.trusted` is false, the menu bar shows "ug?".
 - The gateway at localhost:20128 streams SSE even when not asked and returns empty content for `stream:false` with a system prompt; it ignores plain "reply with corrected text only" and adds commentary. The engine therefore requests `<corrected>` tags and parses both SSE and JSON. Typical latency ≈ 6 s against the 10 s timeout.

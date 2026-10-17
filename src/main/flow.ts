@@ -58,7 +58,7 @@ export class FixFlow {
         if (sel.error === "accessibility_not_trusted") {
           this.d.hideLoading();
           this.d.setStatus({ kind: "needs_permission", message: "Grant Accessibility permission" });
-          this.d.notify("Proofy needs Accessibility permission (System Settings → Privacy & Security → Accessibility).");
+          this.d.notify("ugrammar needs Accessibility permission (System Settings → Privacy & Security → Accessibility).");
           return "needs_permission";
         }
         const msg = READ_ERRORS[sel.error ?? ""] ?? `Could not read selection (${sel.error ?? "unknown"}).`;

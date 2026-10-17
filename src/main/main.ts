@@ -2,7 +2,7 @@ import {
   app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, screen, shell, Tray,
 } from "electron";
 import { execFile } from "node:child_process";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, cpSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { OpenAICompatibleEngine } from "./engine/openai";
 import { FixFlow, type Status } from "./flow";
@@ -11,7 +11,7 @@ import { SettingsStore } from "./settings";
 import { TypingBadge } from "./badge";
 import type { PopoverPayload, SettingsView, TestResult } from "../shared/ipc";
 
-const APP_NAME = "Proofy";
+const APP_NAME = "ugrammar";
 const KEY_SERVICE = "Proofy";
 const KEY_ACCOUNT = "api-key";
 
@@ -23,7 +23,11 @@ const helperPath = app.isPackaged
   ? join(process.resourcesPath, "grammar-helper")
   : join(root, "helper/.build/release/grammar-helper");
 
-const store = new SettingsStore(join(app.getPath("appData"), APP_NAME));
+// Renamed from Proofy: carry settings over once.
+const settingsDir = join(app.getPath("appData"), APP_NAME);
+const legacyDir = join(app.getPath("appData"), "Proofy");
+if (!existsSync(settingsDir) && existsSync(legacyDir)) cpSync(legacyDir, settingsDir, { recursive: true });
+const store = new SettingsStore(settingsDir);
 const helper = new HelperClient(helperPath);
 
 let tray: Tray | null = null;
@@ -48,7 +52,7 @@ async function makeEngine() {
 const STATUS_LABEL: Record<Status["kind"], string> = {
   idle: "Ready", checking: "Checking…", paused: "Paused", error: "Error", needs_permission: "Needs Accessibility permission",
 };
-const STATUS_TITLE: Record<Status["kind"], string> = { idle: "Pf", checking: "Pf…", paused: "Pf⏸", error: "Pf!", needs_permission: "Pf?" };
+const STATUS_TITLE: Record<Status["kind"], string> = { idle: "ug", checking: "ug…", paused: "ug⏸", error: "ug!", needs_permission: "ug?" };
 
 function refreshTray() {
   if (!tray) return;
