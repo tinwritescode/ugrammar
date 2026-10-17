@@ -1,0 +1,24 @@
+{
+  "name": "proofy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "helper": "swift build -c release --package-path helper",
+    "build": "bun run scripts/build.ts",
+    "dev": "bun run helper && bun run build && electron .",
+    "start": "electron .",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "postinstall": "node node_modules/electron/install.js"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.3",
+    "electron": "^44.8.0",
+    "typescript": "^7.0.2"
+  },
+  "trustedDependencies": [
+    "electron"
+  ]
+}
