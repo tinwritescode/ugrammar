@@ -15,5 +15,9 @@ const api: ProofyApi = {
   testConnection: (d) => ipcRenderer.invoke("settings:test", d),
   pickApp: () => ipcRenderer.invoke("settings:pickApp"),
   openAccessibilitySettings: () => ipcRenderer.invoke("settings:openAX"),
+  getTray: () => ipcRenderer.invoke("tray:get"),
+  onTray: (cb) => ipcRenderer.on("tray:state", (_e, s) => cb(s)),
+  trayAction: (a) => ipcRenderer.send("tray:action", a),
+  trayResize: (h) => ipcRenderer.send("tray:resize", h),
 };
 contextBridge.exposeInMainWorld("proofy", api);

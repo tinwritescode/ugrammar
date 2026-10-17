@@ -4,7 +4,7 @@ import { app, BrowserWindow, ipcMain, nativeTheme } from "electron";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { diffWords } from "../shared/diff";
-import type { PopoverPayload, SettingsView } from "../shared/ipc";
+import type { PopoverPayload, SettingsView, TrayState } from "../shared/ipc";
 import { BADGE_PAGE } from "./badge";
 import { DEFAULT_SETTINGS } from "./settings";
 
@@ -36,6 +36,11 @@ ipcMain.handle("settings:test", () => ({ ok: true, message: "Connected (llama3.1
 ipcMain.handle("settings:pickApp", () => null);
 ipcMain.handle("settings:openAX", () => undefined);
 ipcMain.on("popover:action", () => {});
+const trayState: TrayState = {
+  status: "idle", settings: { ...settingsView.settings, autoCheck: true, autoCheckMode: "popup" }, hotkey: "⌥⌘G",
+  insights: [{ from: "has", to: "have", count: 3 }, { from: "monday", to: "Monday", count: 2 }],
+};
+ipcMain.handle("tray:get", () => trayState);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const webPreferences = { preload: join(root, "dist/preload.cjs"), sandbox: true, contextIsolation: true, backgroundThrottling: false };
@@ -70,6 +75,11 @@ app.whenReady().then(async () => {
   const h = await settings.webContents.executeJavaScript("document.body.scrollHeight");
   settings.setContentSize(560, h);
   await shot("settings.png", settings);
+
+  const tray = new BrowserWindow({ width: 344, height: 640, show: false, frame: false, transparent: true, webPreferences });
+  ipcMain.on("tray:resize", (_e, h: number) => tray.isDestroyed() || tray.setSize(344, Math.ceil(h)));
+  await tray.loadFile(join(root, "dist/renderer/tray.html"));
+  await shot("tray.png", tray);
 
   const badge = new BrowserWindow({ width: 22, height: 22, show: false, frame: false, transparent: true, webPreferences });
   await badge.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(BADGE_PAGE));

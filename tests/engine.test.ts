@@ -16,10 +16,15 @@ describe("prompt", () => {
     const m = buildMessages("hello", ["Xpiki", "Kubernetes"]);
     expect(m[0].content).toContain("Xpiki");
     expect(m[0].content).toContain("Kubernetes");
-    expect(m[1].content).toContain("hello");
+    expect(m[0].content).toContain("hello");
   });
   test("no dictionary section when empty", () => {
     expect(buildMessages("hi", [])[0].content).not.toContain("Do not change these words");
+  });
+  test("instructions ride in the user turn, no system role", () => {
+    const m = buildMessages("hi", [], true);
+    expect(m.map((x) => x.role)).toEqual(["user"]);
+    expect(m[0].content).toContain("<notes>");
   });
 });
 

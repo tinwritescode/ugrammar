@@ -6,7 +6,7 @@ import { appendFileSync, cpSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { OpenAICompatibleEngine } from "./engine/openai";
 import { FixFlow, type Status } from "./flow";
-import { HelperClient, type SelectionReply } from "./helper";
+import { HelperClient, type HelperReply, type SelectionReply } from "./helper";
 import { SettingsStore } from "./settings";
 import { TypingBadge } from "./badge";
 import { AutoChecker, type Issue, type SentenceFix, type Snapshot } from "./autocheck";
@@ -14,7 +14,7 @@ import { UnderlineOverlay } from "./underline";
 import { InsightStore } from "./insights";
 import { diffWords } from "../shared/diff";
 import type { Tone } from "./engine/types";
-import type { PopoverPayload, SettingsView, TestResult } from "../shared/ipc";
+import type { PopoverPayload, SettingsView, TestResult, TrayAction, TrayState } from "../shared/ipc";
 
 const APP_NAME = "ugrammar";
 const KEY_SERVICE = "Proofy";
@@ -61,15 +61,17 @@ const STATUS_LABEL: Record<Status["kind"], string> = {
 };
 const STATUS_TITLE: Record<Status["kind"], string> = { idle: "ug", checking: "ug…", paused: "ug⏸", error: "ug!", needs_permission: "ug?" };
 
-function refreshTray() {
-  if (!tray) return;
+const hotkeyLabel = () => {
+  const { mods, key } = store.get().hotkey;
+  return `${mods.map((m) => ({ cmd: "⌘", alt: "⌥", ctrl: "⌃", shift: "⇧" })[m]).join("")}${key}`;
+};
+
+/** Right-click fallback: the plain native menu. */
+function trayMenu() {
   const s = store.get();
-  tray.setTitle(STATUS_TITLE[status.kind]);
-  const hk = `${s.hotkey.mods.map((m) => ({ cmd: "⌘", alt: "⌥", ctrl: "⌃", shift: "⇧" })[m]).join("")}${s.hotkey.key}`;
-  tray.setToolTip(`${APP_NAME} — ${STATUS_LABEL[status.kind]}`);
-  tray.setContextMenu(Menu.buildFromTemplate([
+  return Menu.buildFromTemplate([
     { label: `Status: ${STATUS_LABEL[status.kind]}${status.message ? ` — ${status.message}` : ""}`, enabled: false },
-    { label: `Fix selection: ${hk}`, enabled: false },
+    { label: `Fix selection: ${hotkeyLabel()}`, enabled: false },
     { type: "separator" },
     { label: "Pause", type: "checkbox", checked: s.paused, click: (i) => store.update({ paused: i.checked }) },
     ...(status.kind === "needs_permission"
@@ -78,8 +80,78 @@ function refreshTray() {
     { label: "Settings…", accelerator: "Cmd+,", click: openSettings },
     { type: "separator" },
     { label: `Quit ${APP_NAME}`, accelerator: "Cmd+Q", click: () => app.quit() },
-  ]));
+  ]);
 }
+
+function refreshTray() {
+  if (!tray) return;
+  tray.setTitle(STATUS_TITLE[status.kind]);
+  tray.setToolTip(`${APP_NAME} — ${STATUS_LABEL[status.kind]}`);
+  if (trayWin && !trayWin.isDestroyed() && trayWin.isVisible()) trayWin.webContents.send("tray:state", trayState());
+}
+
+// ---------- Tray panel ----------
+const TRAY_W = 344;
+let trayWin: BrowserWindow | null = null;
+let trayHiddenAt = 0;
+
+const trayState = (): TrayState => ({
+  status: status.kind, message: status.message, settings: store.get(), hotkey: hotkeyLabel(), insights: insights.top(3),
+});
+
+function ensureTrayWin(): BrowserWindow {
+  if (trayWin && !trayWin.isDestroyed()) return trayWin;
+  trayWin = new BrowserWindow({
+    width: TRAY_W, height: 520, show: false, frame: false, resizable: false, movable: false, fullscreenable: false,
+    alwaysOnTop: true, skipTaskbar: true, hasShadow: true, transparent: true,
+    webPreferences: { preload: join(root, "dist/preload.cjs"), sandbox: true, contextIsolation: true },
+  });
+  trayWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  trayWin.on("blur", () => hideTrayWin());
+  trayWin.loadFile(join(root, "dist/renderer/tray.html"));
+  return trayWin;
+}
+
+function hideTrayWin() {
+  if (!trayWin || trayWin.isDestroyed() || !trayWin.isVisible()) return;
+  trayWin.hide();
+  trayHiddenAt = Date.now();
+}
+
+function placeTrayWin(win: BrowserWindow) {
+  if (!tray) return;
+  const b = tray.getBounds();
+  const area = screen.getDisplayNearestPoint({ x: b.x, y: b.y }).workArea;
+  const [w] = win.getSize();
+  const x = Math.min(Math.max(b.x + b.width / 2 - w / 2, area.x + 8), area.x + area.width - w - 8);
+  win.setPosition(Math.round(x), Math.round(area.y + 6));
+}
+
+async function toggleTrayWin() {
+  if (trayWin?.isVisible()) return hideTrayWin();
+  if (Date.now() - trayHiddenAt < 250) return; // this click is what blurred it closed
+  const win = ensureTrayWin();
+  if (win.webContents.isLoading()) await new Promise<void>((r) => win.webContents.once("did-finish-load", () => r()));
+  win.webContents.send("tray:state", trayState());
+  placeTrayWin(win);
+  win.show();
+  win.focus();
+}
+
+ipcMain.handle("tray:get", trayState);
+ipcMain.on("tray:resize", (_e, h: number) => {
+  if (trayWin && !trayWin.isDestroyed() && h > 0) trayWin.setSize(TRAY_W, Math.min(Math.ceil(h), 720));
+});
+ipcMain.on("tray:action", async (_e, a: TrayAction) => {
+  hideTrayWin();
+  if (a === "settings") return openSettings();
+  if (a === "quit") return app.quit();
+  if (a === "ax") { await helper.request("prompt_ax"); return openAXSettings(); }
+  // Tone: hand focus back to the app the user was writing in, then rewrite its selection.
+  if (!settingsWin?.isVisible()) app.hide();
+  await new Promise((r) => setTimeout(r, 200));
+  debug(`tone=${a} outcome=${await runFlow({ tone: a })}`);
+});
 
 const badge = new TypingBadge(root, () => void onBadgeClick(), async () => {
   const r = await helper.request<any>("caret", { excluded: store.get().excludedApps }, 1500);
@@ -130,6 +202,9 @@ const POPOVER_W = 460;  function ensurePopover(): BrowserWindow {
 interface Anchor { x: number; y: number; altY: number }
 let popoverAnchor: Anchor | null = null;
 
+type Rect = { x: number; y: number; w: number; h: number };
+const belowRect = (r: Rect): Anchor => ({ x: r.x + r.w / 2, y: r.y + r.h + 6, altY: r.y - 6 });
+
 function cursorAnchor(): Anchor {
   const pt = screen.getCursorScreenPoint();
   return { x: pt.x, y: pt.y + 20, altY: pt.y - 36 };
@@ -166,9 +241,9 @@ function showDiff(p: PopoverPayload, anchor?: Anchor): Promise<"accept" | "dismi
   });
 }
 
-function showMessage(message: string) {
+function showMessage(message: string, anchor?: Anchor) {
   closePopover();
-  void showPopover({ kind: "message", message });
+  void showPopover({ kind: "message", message }, anchor);
   messageTimer = setTimeout(() => closePopover(), 2200);
 }
 
@@ -204,12 +279,31 @@ const flow = new FixFlow({
   makeEngine,
   setStatus,
   notify,
-  showDiff,
-  showMessage,
-  showLoading: () => { loadingSeq++; loadingShown = false; showLoading(); }, // the manual check owns the popover now
+  showDiff: (p) => showDiff(p, flowAnchor),
+  showMessage: (m) => showMessage(m, flowAnchor),
+  showLoading: () => { loadingSeq++; loadingShown = false; showLoading(flowAnchor); }, // the manual check owns the popover now
   hideLoading: () => closePopover(),
   onApplied: (o, c, n) => insights.record(o, c, n),
 });
+
+let flowAnchor: Anchor | undefined;
+
+/** Under the selection, else under the focused field; undefined leaves the popover at the mouse. */
+async function selectionAnchor(): Promise<Anchor | undefined> {
+  const r = await helper.request<HelperReply & Partial<Rect & { visible: boolean; precise: boolean }>>("caret", { excluded: store.get().excludedApps, deep: true }, 1500);
+  debug(`anchor ${!r.ok || !r.visible ? "mouse" : r.precise ? "selection" : "field"}`);
+  return r.ok && r.visible && r.x !== undefined && r.y !== undefined && r.w !== undefined && r.h !== undefined ? belowRect({ x: r.x, y: r.y, w: r.w, h: r.h }) : undefined;
+}
+
+/** Manual checks: popovers sit by the text being fixed. */
+async function runFlow(opts?: Parameters<FixFlow["run"]>[0]) {
+  flowAnchor = await selectionAnchor();
+  try {
+    return await flow.run(opts);
+  } finally {
+    flowAnchor = undefined;
+  }
+}
 
 // ---------- Auto-check (underline in place + small card) ----------
 let cardOpen = false;
@@ -249,7 +343,7 @@ async function rangeAnchor(loc: number, len: number, known?: { x: number; y: num
     const snap = await helper.request<Snapshot>("snapshot", { excluded: store.get().excludedApps, ranges: [{ loc, len }] }, 3000);
     r = snap.ok && snap.visible ? snap.bounds?.[0] ?? null : null;
   }
-  return r ? { x: r.x + r.w / 2, y: r.y + r.h + 6, altY: r.y - 6 } : undefined;
+  return r ? belowRect(r) : undefined;
 }
 
 const issueAnchor = (it: Issue) => rangeAnchor(it.start, it.end - it.start, underlines.bounds(it.id));
@@ -322,14 +416,14 @@ async function onBadgeClick() {
   debug("badge click");
   closePopover();
   await new Promise((r) => setTimeout(r, 0));
-  debug(`outcome=${await flow.run({ selectAll: true })} status=${status.kind}`);
+  debug(`outcome=${await runFlow({ selectAll: true })} status=${status.kind}`);
 }
 
 async function onHotkey() {
   debug("hotkey");
   closePopover(); // a still-open popover counts as dismissed
   await new Promise((r) => setTimeout(r, 0));
-  debug(`outcome=${await flow.run()} status=${status.kind}${status.message ? ` (${status.message})` : ""}`);
+  debug(`outcome=${await runFlow()} status=${status.kind}${status.message ? ` (${status.message})` : ""}`);
 }
 
 async function registerHotkey() {
@@ -344,7 +438,7 @@ async function registerHotkey() {
 async function onHotkey2() {
   closePopover();
   const pick = (tone: Tone) => async () => {
-    debug(`tone=${tone} outcome=${await flow.run({ tone })}`);
+    debug(`tone=${tone} outcome=${await runFlow({ tone })}`);
   };
   Menu.buildFromTemplate([
     { label: "Rewrite selection as…", enabled: false },
@@ -410,6 +504,8 @@ ipcMain.handle("settings:openAX", async () => {
 app.whenReady().then(async () => {
   app.dock?.hide();
   tray = new Tray(nativeImage.createEmpty());
+  tray.on("click", () => void toggleTrayWin());
+  tray.on("right-click", () => tray?.popUpContextMenu(trayMenu()));
   helper.onHotkey = () => void onHotkey();
   helper.onHotkey2 = () => void onHotkey2();
   helper.onRestart = () => void registerHotkey();
@@ -425,13 +521,12 @@ app.whenReady().then(async () => {
   await registerHotkey();
 
   if (!store.get().firstRunAcknowledged) {
-    const hk = store.get().hotkey;
     await dialog.showMessageBox({
       type: "info",
       message: `Welcome to ${APP_NAME}`,
       detail:
         "1. Grant Accessibility permission when macOS asks (System Settings → Privacy & Security → Accessibility). Needed to read and replace text.\n" +
-        `2. Select text and press ${hk.mods.map((m) => ({ cmd: "⌘", alt: "⌥", ctrl: "⌃", shift: "⇧" })[m]).join("")}${hk.key} to proofread. ⌥⌘T rewrites in a tone.\n` +
+        `2. Select text and press ${hotkeyLabel()} to proofread. ⌥⌘T rewrites in a tone.\n` +
         "3. Optional: Settings → Checking → Auto-check underlines mistakes as you type.\n\n" +
         `Privacy: checked text is sent to ${store.get().endpoint} (change it in Settings). Password fields and excluded apps are never read. Text is never logged or stored.`,
       buttons: ["Get started"],

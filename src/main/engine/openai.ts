@@ -38,10 +38,8 @@ export function buildMessages(text: string, dictionary: string[], explain = fals
   if (dictionary.length > 0) {
     system += ` Do not change these words (names, jargon, spelling is intentional): ${dictionary.join(", ")}.`;
   }
-  return [
-    { role: "system", content: system },
-    { role: "user", content: `Correct this text.\n<text>\n${text}\n</text>` },
-  ];
+  // Some gateways drop the system role, so the instructions travel in the user turn.
+  return [{ role: "user", content: `${system}\n\nCorrect this text.\n<text>\n${text}\n</text>` }];
 }
 
 export function parseNotes(raw: string): string[] {

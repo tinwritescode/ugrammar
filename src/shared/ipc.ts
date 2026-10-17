@@ -1,5 +1,7 @@
 import type { DiffOp } from "./diff";
 import type { Settings } from "../main/settings";
+import type { Tone } from "../main/engine/types";
+import type { StatusKind } from "../main/flow";
 
 export interface PopoverPayload {
   kind: "diff" | "message" | "loading";
@@ -17,6 +19,16 @@ export interface SettingsView {
   axTrusted: boolean;
   insights: { from: string; to: string; count: number; note?: string }[];
 }
+
+export interface TrayState {
+  status: StatusKind;
+  message?: string;
+  settings: Settings;
+  hotkey: string;
+  insights: SettingsView["insights"];
+}
+
+export type TrayAction = "settings" | "quit" | "ax" | Tone;
 
 export interface TestResult {
   ok: boolean;
@@ -37,4 +49,8 @@ export interface ProofyApi {
   testConnection(draft: { endpoint: string; model: string; apiKey?: string }): Promise<TestResult>;
   pickApp(): Promise<string | null>;
   openAccessibilitySettings(): Promise<void>;
+  getTray(): Promise<TrayState>;
+  onTray(cb: (s: TrayState) => void): void;
+  trayAction(a: TrayAction): void;
+  trayResize(height: number): void;
 }

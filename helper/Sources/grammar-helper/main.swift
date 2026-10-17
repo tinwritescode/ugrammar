@@ -166,15 +166,24 @@ func handleCaret(_ id: Any?, _ msg: [String: Any]) {
     var rect = CGRect.zero
     var precise = false
     var selLen = 0
-    if hasRange, let r = rangeRef {
-        var cf = CFRange(location: 0, length: 0)
-        if AXValueGetValue(r as! AXValue, .cfRange, &cf) { selLen = cf.length }
-    }
+    var cf = CFRange(location: 0, length: 0)
+    if hasRange, let r = rangeRef, AXValueGetValue(r as! AXValue, .cfRange, &cf) { selLen = cf.length }
     if hasRange, let r = rangeRef {
         var b: CFTypeRef?
         if AXUIElementCopyParameterizedAttributeValue(el, kAXBoundsForRangeParameterizedAttribute as CFString, r, &b) == .success,
            let b = b, CFGetTypeID(b) == AXValueGetTypeID(),
-           AXValueGetValue(b as! AXValue, .cgRect, &rect), rect.height > 0, rect.height < 200 { precise = true }
+           AXValueGetValue(b as! AXValue, .cgRect, &rect), rect.height > 0, rect.height < 200, rect.width > 0 { precise = true }
+    }
+    // Chromium reports 0×0 or the whole window for a range: measure the first and last selected characters instead.
+    if !precise, hasRange, msg["deep"] as? Bool == true, let value = axString(el, kAXValueAttribute as String), value.utf16.count <= 20000 {
+        let n = value.utf16.count
+        let first = min(max(cf.length > 0 ? cf.location : cf.location - 1, 0), max(n - 1, 0))
+        let last = min(max(cf.location + cf.length - 1, first), max(n - 1, 0))
+        var leaves: [(el: AXUIElement, start: Int, len: Int)]? = nil
+        if n > 0, let a = rangeRect(el, value, &leaves, first, 1) {
+            rect = rangeRect(el, value, &leaves, last, 1).map { a.union($0) } ?? a
+            precise = true
+        }
     }
     if !precise {
         var pv: CFTypeRef?, sv: CFTypeRef?
@@ -203,6 +212,14 @@ func lineRect(_ el: AXUIElement, _ loc: Int, _ len: Int) -> CGRect? {
           let b = b, CFGetTypeID(b) == AXValueGetTypeID(), AXValueGetValue(b as! AXValue, .cgRect, &rect),
           rect.height > 0, rect.height < 60, rect.width > 0 else { return nil }
     return rect
+}
+
+/// `lineRect`, falling back to the AXStaticText leaves: Chromium contenteditable answers only there, with leaf-local offsets.
+func rangeRect(_ el: AXUIElement, _ value: String, _ leaves: inout [(el: AXUIElement, start: Int, len: Int)]?, _ loc: Int, _ len: Int) -> CGRect? {
+    if let r = lineRect(el, loc, len) { return r }
+    if leaves == nil { leaves = textLeaves(el, value) }
+    guard let lf = leaves!.first(where: { loc >= $0.start && loc < $0.start + $0.len }) else { return nil }
+    return lineRect(lf.el, loc - lf.start, min(len, lf.start + lf.len - loc))
 }
 
 /// AXStaticText descendants in document order, each located in `value` (UTF-16 offsets); paragraph breaks exist only in `value`.
@@ -248,15 +265,7 @@ func handleSnapshot(_ id: Any?, _ msg: [String: Any]) {
     var leaves: [(el: AXUIElement, start: Int, len: Int)]? = nil
     for r in (msg["ranges"] as? [[String: Any]]) ?? [] {
         guard let loc = r["loc"] as? Int, let len = r["len"] as? Int else { bounds.append(NSNull()); continue }
-        var rect = lineRect(el, loc, len)
-        if rect == nil {
-            // Chromium contenteditable answers only on its AXStaticText leaves, with leaf-local offsets.
-            if leaves == nil { leaves = textLeaves(el, value) }
-            if let lf = leaves!.first(where: { loc >= $0.start && loc < $0.start + $0.len }) {
-                rect = lineRect(lf.el, loc - lf.start, min(len, lf.start + lf.len - loc))
-            }
-        }
-        if let rect = rect { bounds.append(["x": rect.origin.x, "y": rect.origin.y, "w": rect.size.width, "h": rect.size.height]) }
+        if let rect = rangeRect(el, value, &leaves, loc, len) { bounds.append(["x": rect.origin.x, "y": rect.origin.y, "w": rect.size.width, "h": rect.size.height]) }
         else { bounds.append(NSNull()) }
     }
     reply(id, true, ["visible": true, "text": value, "caret": cf.location, "selLen": cf.length, "pid": Int(app.processIdentifier),
