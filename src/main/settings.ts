@@ -14,6 +14,7 @@ export interface Settings {
   excludedApps: string[]; // bundle ids
   hotkey: Hotkey;
   paused: boolean;
+  explain: boolean; // short Vietnamese reason per fix (slower)
   firstRunAcknowledged: boolean;
 }
 
@@ -35,6 +36,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ],
   hotkey: { key: "G", mods: ["alt", "cmd"] },
   paused: false,
+  explain: true,
   firstRunAcknowledged: false,
 };
 
@@ -69,6 +71,7 @@ export function normalizeSettings(raw: unknown): Settings {
     excludedApps: strList(r.excludedApps, [...d.excludedApps]),
     hotkey: hotkeyOk ? { key: hk!.key!.toUpperCase(), mods: [...hk!.mods!] as Hotkey["mods"] } : { ...d.hotkey, mods: [...d.hotkey.mods] },
     paused: r.paused === true,
+    explain: r.explain !== false,
     firstRunAcknowledged: r.firstRunAcknowledged === true,
   };
 }

@@ -22,7 +22,7 @@ html,body{margin:0;background:transparent;overflow:hidden;cursor:pointer;user-se
 <path d="M7.5 16.5V5.5h4.1a3.1 3.1 0 0 1 0 6.2H7.5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M12.2 15.6l1.7 1.7 3.3-3.6" fill="none" stroke="#9ff0b4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
 <span class="ring"></span></div>
-<script>document.addEventListener("mousedown",()=>proofy.badgeClick())</script>`;
+<script>document.addEventListener("mousedown",e=>{if(e.button===0)proofy.badgeClick()});document.addEventListener("contextmenu",e=>{e.preventDefault();proofy.badgeMenu()})</script>`;
 
 /** Small always-on-top dot beside the focused text field: shows Proofy is running and sees you typing. */
 export class TypingBadge {
@@ -31,15 +31,20 @@ export class TypingBadge {
   private last = "";
   private state: BadgeState = "idle";
   private busy = false;
+  /** Bundle id of the app the badge is currently beside (for the right-click menu). */
+  bundleId = "";
   private lastMove = 0;
   private seen = false;
+
+  onMenu?: (bundleId: string) => void;
 
   constructor(
     private root: string,
     private onClick: () => void,
-    private fetchCaret: () => Promise<(CaretRect & { visible: boolean; selLen?: number }) | null>,
+    private fetchCaret: () => Promise<(CaretRect & { visible: boolean; selLen?: number; bundleId?: string }) | null>,
   ) {
     ipcMain.on("badge:click", () => this.onClick());
+    ipcMain.on("badge:menu", () => this.onMenu?.(this.bundleId));
   }
 
   start() {
@@ -87,6 +92,7 @@ export class TypingBadge {
     try {
       const r = await this.fetchCaret();
       if (!r || !r.visible) { this.seen = false; return this.hide(); }
+      this.bundleId = r.bundleId ?? "";
       const win = this.ensure();
       const pos = badgePosition(r);
       const area = screen.getDisplayNearestPoint(pos).workArea;

@@ -73,10 +73,10 @@ export class FixFlow {
         return "too_short";
       }
 
-      let corrected: string;
+      let result: { corrected: string; notes?: string[] };
       try {
         const engine = await this.d.makeEngine();
-        corrected = (await engine.check({ text: sel.text, dictionary: s.dictionary })).corrected;
+        result = (await engine.check({ text: sel.text, dictionary: s.dictionary, explain: s.explain }));
       } catch (e) {
         const msg = (e as Error).message || "Engine error";
         this.d.hideLoading();
@@ -85,6 +85,7 @@ export class FixFlow {
         return "error";
       }
 
+      const corrected = result.corrected;
       if (corrected === sel.text) {
         this.d.showMessage("No changes needed ✓");
         this.idle();
@@ -98,6 +99,7 @@ export class FixFlow {
         corrected,
         ops: diffWords(sel.text, corrected),
         appName: sel.appName,
+        notes: result.notes,
       });
       if (choice !== "accept") return "dismissed";
 

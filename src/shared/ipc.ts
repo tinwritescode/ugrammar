@@ -8,6 +8,7 @@ export interface PopoverPayload {
   ops?: DiffOp[];
   message?: string;
   appName?: string;
+  notes?: string[];
 }
 
 export interface SettingsView {
@@ -26,6 +27,7 @@ export interface ProofyApi {
   popoverAction(action: "accept" | "dismiss"): void;
   popoverResize(height: number): void;
   badgeClick(): void;
+  badgeMenu(): void;
   getSettings(): Promise<SettingsView>;
   saveSettings(patch: Partial<Settings>): Promise<SettingsView>;
   setApiKey(key: string): Promise<SettingsView>;

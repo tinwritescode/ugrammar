@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { OpenAICompatibleEngine, buildMessages, cleanModelOutput, postProcess } from "../src/main/engine/openai";
+import { OpenAICompatibleEngine, buildMessages, cleanModelOutput, parseNotes, postProcess } from "../src/main/engine/openai";
 import { EngineError } from "../src/main/engine/types";
 import { diffWords } from "../src/shared/diff";
 
@@ -135,5 +135,15 @@ describe("postProcess", () => {
   test("straightens curly quotes unless original had them", () => {
     expect(postProcess("dont", "doesn’t", [])).toBe("doesn't");
     expect(postProcess("it’s", "it’s", [])).toBe("it’s");
+  });
+});
+
+describe("parseNotes", () => {
+  test("extracts bullet lines, max 6", () => {
+    const raw = "<corrected>x</corrected>\n<notes>\n- has → have: chủ ngữ I\n2. a → an: trước nguyên âm\n</notes>";
+    expect(parseNotes(raw)).toEqual(["has → have: chủ ngữ I", "a → an: trước nguyên âm"]);
+  });
+  test("missing block gives empty", () => {
+    expect(parseNotes("<corrected>x</corrected>")).toEqual([]);
   });
 });

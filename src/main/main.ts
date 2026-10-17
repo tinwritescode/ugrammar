@@ -185,6 +185,24 @@ const flow = new FixFlow({
   hideLoading: () => closePopover(),
 });
 
+let resumeTimer: NodeJS.Timeout | null = null;
+
+badge.onMenu = (bundleId) => {
+  Menu.buildFromTemplate([
+    { label: "Ẩn ở app này", enabled: !!bundleId, click: () => store.addExcludedApp(bundleId) },
+    {
+      label: "Tạm dừng 1 giờ",
+      click: () => {
+        store.update({ paused: true });
+        if (resumeTimer) clearTimeout(resumeTimer);
+        resumeTimer = setTimeout(() => store.update({ paused: false }), 3600_000);
+      },
+    },
+    { type: "separator" },
+    { label: "Settings…", click: openSettings },
+  ]).popup();
+};
+
 async function onBadgeClick() {
   debug("badge click");
   closePopover();

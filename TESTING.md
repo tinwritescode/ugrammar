@@ -47,3 +47,7 @@ Automated: `bun test` (engine, diff, settings, flow) and `bun run typecheck`.
 - [ ] In Chrome/Electron apps (no caret bounds) the dot sits in the bottom-right corner of the focused field.
 - [ ] Dot is hidden in password fields, excluded apps, when paused, and without Accessibility permission.
 - [ ] Press ⌥⌘G: dot turns into a spinner while checking.
+
+## Explanations and badge menu
+- [ ] Diff popover lists a short Vietnamese reason per fix under the text (setting `explain` in settings.json; set false for ~1.5s faster checks).
+- [ ] Right-click the badge: "Ẩn ở app này" adds the app to the exclusion list; "Tạm dừng 1 giờ" pauses and auto-resumes.

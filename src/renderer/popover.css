@@ -13,3 +13,4 @@ button.primary { background: #0a84ff; border-color: #0a84ff; color: #fff; }
 .loading { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 2px 0; color: var(--mut); }
 .spin { width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: #0a84ff; border-radius: 50%; animation: spin .7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+.notes { margin: 8px 0 0; padding-left: 18px; color: var(--mut); font-size: 12px; -webkit-app-region: no-drag; user-select: text; }

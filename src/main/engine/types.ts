@@ -1,11 +1,14 @@
 export interface CheckRequest {
   text: string;
   dictionary: string[];
+  /** Ask for a short Vietnamese reason per fix. Slower; off by default in the engine. */
+  explain?: boolean;
 }
 
 export interface CheckResult {
   original: string;
   corrected: string;
+  notes?: string[];
 }
 
 export type EngineErrorKind = "timeout" | "network" | "http" | "bad_response";

@@ -23,7 +23,9 @@ function render(p: PopoverPayload) {
     }
     const accept = el("button", { className: "primary", onclick: () => proofy.popoverAction("accept") }, "Accept");
     const dismiss = el("button", { onclick: () => proofy.popoverAction("dismiss") }, "Dismiss");
-    card.append(body, el("div", { className: "bar" }, el("span", { className: "hint" }, "⌘↩ accept · esc dismiss"), dismiss, accept));
+    card.append(body);
+    if (p.notes?.length) card.append(el("ul", { className: "notes" }, ...p.notes.map((n) => el("li", {}, n))));
+    card.append(el("div", { className: "bar" }, el("span", { className: "hint" }, "⌘↩ accept · esc dismiss"), dismiss, accept));
   }
   requestAnimationFrame(() => proofy.popoverResize(card.offsetHeight + 14));
 }
