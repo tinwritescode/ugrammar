@@ -135,3 +135,18 @@ test("underline mode never shows loading", async () => {
   await r.step(); await r.step(); await r.step();
   expect(r.loading).toEqual([]);
 });
+
+test("typed . is checked within one fast poll", async () => {
+  const r = rig();
+  await r.step(250); await r.step(250);
+  expect(r.calls()).toBe(1);
+});
+
+test("sentence typed past before it settled is still checked", async () => {
+  const r = rig();
+  await r.step(100);
+  r.set({ text: S + " Next", caret: S.length + 5 });
+  await r.step(100);
+  expect(r.calls()).toBe(1);
+  expect(r.auto.issues.map((i) => i.original)).toEqual(["dont"]);
+});

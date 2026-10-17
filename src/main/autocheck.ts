@@ -1,5 +1,5 @@
 import { diffSpans } from "../shared/spans";
-import { sentenceEndingAt } from "../shared/sentence";
+import { sentenceEndingAt, type SentenceRange } from "../shared/sentence";
 import type { GrammarEngine } from "./engine/types";
 import type { HelperReply } from "./helper";
 import type { Settings } from "./settings";
@@ -49,8 +49,10 @@ export interface AutoDeps {
   log?(msg: string): void;
 }
 
-const POLL_MS = 600;
+const POLL_MS = 250;
 const STABLE_MS = 500;
+/** A typed . ? ! is a clear "sentence done" signal: wait only long enough to skip "..." / "?!" mid-burst. */
+const PUNCT_STABLE_MS = 200;
 const MAX_CACHE = 200;
 
 /** Keep issues whose text is still at (or has shifted near) its old place; drop the rest. */
@@ -79,6 +81,8 @@ export class AutoChecker {
   private loggedText = "";
   private loggedMarks = "";
   private changedAt = 0;
+  /** Sentence seen ending at the caret; checked even if the user types past it before the text settles. */
+  private pending: SentenceRange | null = null;
   /** Sentence → its spans (offsets within the sentence); null while in flight or after a failure. */
   private checked = new Map<string, Omit<Issue, "id">[] | null>();
   issues: Issue[] = [];
@@ -102,6 +106,7 @@ export class AutoChecker {
     this.issues = [];
     this.lastText = "";
     this.field = "";
+    this.pending = null;
     this.d.onMarks([]);
   }
 
@@ -167,24 +172,37 @@ export class AutoChecker {
         this.changedAt = now;
         this.setLoading(null); // typing on: the popup will not open, so drop its hint
         this.issues = revalidate(this.issues, text);
+        this.pending = sentenceEndingAt(text, snap.caret ?? 0) ?? this.pending;
       }
       this.publish(snap, asked);
-      if (this.checking || now - this.changedAt < STABLE_MS || (snap.selLen ?? 0) > 0) return;
+      if (this.checking || (snap.selLen ?? 0) > 0) return;
       const sent = sentenceEndingAt(text, snap.caret ?? 0);
+      const p = this.pending;
+      if (p && p.text !== sent?.text) {
+        // Typed past it: the sentence is done, no need to wait for the text to settle.
+        this.pending = null;
+        if (text.slice(p.start, p.end) === p.text && !this.checked.has(p.text)) return this.begin(p, snap.bundleId, field);
+      }
+      if (now - this.changedAt < (sent && /[.?!]$/.test(sent.text) ? PUNCT_STABLE_MS : STABLE_MS)) return;
       if (sent && this.checked.has(sent.text)) return this.restore(sent.start, sent.text);
       if (!sent) {
         if (text !== this.loggedText) { this.loggedText = text; this.d.log?.(`no sentence app=${snap.bundleId} len=${text.length} caret=${snap.caret}`); }
         return;
       }
-      this.checked.set(sent.text, null);
-      if (this.checked.size > MAX_CACHE) this.checked.delete(this.checked.keys().next().value!);
-      this.d.log?.(`check start app=${snap.bundleId} len=${sent.text.length}`);
-      void this.check(sent.start, sent.text, field);
+      this.begin(sent, snap.bundleId, field);
     } catch {
       this.d.onMarks([]);
     } finally {
       this.busy = false;
     }
+  }
+
+  private begin(sent: SentenceRange, app: string | undefined, field: string) {
+    if (this.pending?.text === sent.text) this.pending = null;
+    this.checked.set(sent.text, null);
+    if (this.checked.size > MAX_CACHE) this.checked.delete(this.checked.keys().next().value!);
+    this.d.log?.(`check start app=${app} len=${sent.text.length}`);
+    void this.check(sent.start, sent.text, field);
   }
 
   /** Same sentence typed again (or retyped elsewhere in the field): re-add its cached issues without a new request. */
