@@ -96,6 +96,8 @@ button.ghost:hover { background: var(--surface-2); filter: none; }
 #panel::-webkit-scrollbar-thumb { border-radius: 999px; background: transparent; }
 #panel.scrolling::-webkit-scrollbar-thumb { background: color-mix(in oklab, var(--muted) 50%, transparent); }
 .foot { margin: 8px 0 0; }
+.about { margin: 4px 0 0; text-align: center; }
+.about a { color: inherit; text-decoration: underline; cursor: pointer; }
 button.small { height: 26px; padding: 0 10px; font-size: 12px; }
 .form { display: flex; flex-direction: column; gap: 10px; }
 .field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted); }

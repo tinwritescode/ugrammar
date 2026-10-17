@@ -50,7 +50,7 @@ export interface TrayState {
   hasApiKey: boolean;
 }
 
-export type TrayAction = "quit" | "ax" | Tone;
+export type TrayAction = "quit" | "ax" | "github" | Tone;
 
 export interface TestResult {
   ok: boolean;
@@ -74,4 +74,5 @@ export interface ProofyApi {
   onTray(cb: (s: TrayState) => void): void;
   trayAction(a: TrayAction): void;
   trayResize(height: number): void;
+  appVersion(): Promise<string>;
 }

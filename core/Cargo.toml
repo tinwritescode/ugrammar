@@ -2,6 +2,9 @@
 name = "ugrammar-core"
 version = "0.1.0"
 edition = "2021"
+authors = ["Tín Nguyễn"]
+description = "Platform-free core of ugrammar: settings, engine client, diff, sentence logic"
+repository = "https://github.com/tinwritescode/ugrammar"
 publish = false
 
 [dependencies]

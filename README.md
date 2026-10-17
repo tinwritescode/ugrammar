@@ -23,3 +23,7 @@ bun run package   # -> release/ugrammar.zip (ugrammar.app, arm64, ad-hoc signed)
 ```
 
 Ad-hoc signed, not notarized. Open it the first time with right-click → Open, then grant Accessibility to ugrammar.
+
+## Author
+
+Tín Nguyễn ([@tinwritescode](https://github.com/tinwritescode)). Source and issues: https://github.com/tinwritescode/ugrammar

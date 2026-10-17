@@ -21,6 +21,7 @@ use ugrammar_core::insights::InsightStore;
 use ugrammar_core::settings::{AutoCheckMode, Mod, Settings, SettingsStore};
 
 pub const APP_NAME: &str = "ugrammar";
+const REPO_URL: &str = "https://github.com/tinwritescode/ugrammar";
 const KEY_SERVICE: &str = "Proofy";
 const KEY_ACCOUNT: &str = "api-key";
 pub const POPOVER_W: f64 = 460.0;
@@ -393,6 +394,9 @@ impl Ctx {
             "ax" => {
                 self.helper.request("prompt_ax", json!({}), 10 * SECOND).await;
                 self.open_ax_settings();
+            }
+            "github" => {
+                let _ = std::process::Command::new("/usr/bin/open").arg(REPO_URL).spawn();
             }
             tone => {
                 let Ok(tone) = serde_json::from_value::<Tone>(json!(tone)) else { return };

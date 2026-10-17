@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getVersion } from "@tauri-apps/api/app";
 import type { PopoverPayload, ProofyApi, TrayState } from "../shared/ipc";
 
 export const proofy: ProofyApi = {
@@ -23,4 +24,5 @@ export const proofy: ProofyApi = {
   onTray: (cb) => void listen<TrayState>("tray:state", (e) => cb(e.payload)),
   trayAction: (action) => void invoke("tray_action", { action }),
   trayResize: (height) => void invoke("tray_resize", { height }),
+  appVersion: getVersion,
 };

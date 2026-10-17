@@ -96,6 +96,11 @@ panel.addEventListener("scroll", () => {
 });
 $("openAX").onclick = () => proofy.trayAction("ax");
 $("quit").onclick = () => proofy.trayAction("quit");
+$("github").onclick = (e) => {
+  e.preventDefault();
+  proofy.trayAction("github");
+};
+void proofy.appVersion().then((v) => ($("version").textContent = `v${v}`));
 for (const b of $("mode").querySelectorAll<HTMLButtonElement>("button")) {
   b.onclick = () => save(b.dataset.mode === "off" ? { autoCheck: false } : { autoCheck: true, autoCheckMode: b.dataset.mode === "popup" ? "popup" : "underline" });
 }
