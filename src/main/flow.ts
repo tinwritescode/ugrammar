@@ -16,7 +16,7 @@ export type FixOutcome =
 
 export interface FlowDeps {
   settings(): Settings;
-  readSelection(excluded: string[]): Promise<SelectionReply>;
+  readSelection(excluded: string[], selectAll?: boolean): Promise<SelectionReply>;
   writeSelection(text: string, pid: number | undefined, method: "ax" | "clipboard" | undefined): Promise<HelperReply>;
   makeEngine(): Promise<GrammarEngine>;
   setStatus(s: Status): void;
@@ -44,7 +44,8 @@ export class FixFlow {
     this.d.setStatus(this.d.settings().paused ? { kind: "paused" } : { kind: "idle" });
   }
 
-  async run(): Promise<FixOutcome> {
+  /** `selectAll`: used by the badge click, checks the whole field when nothing is selected. */
+  async run(opts: { selectAll?: boolean } = {}): Promise<FixOutcome> {
     const s = this.d.settings();
     if (s.paused) return "paused";
     if (this.busy) return "busy";
@@ -52,7 +53,7 @@ export class FixFlow {
     try {
       this.d.setStatus({ kind: "checking" });
       this.d.showLoading();
-      const sel = await this.d.readSelection(s.excludedApps);
+      const sel = await this.d.readSelection(s.excludedApps, opts.selectAll);
       if (!sel.ok || !sel.text) {
         if (sel.error === "accessibility_not_trusted") {
           this.d.hideLoading();

@@ -131,6 +131,13 @@ func handleRead(_ id: Any?, _ msg: [String: Any]) {
     if let el = el, let sel = axString(el, kAXSelectedTextAttribute as String), !sel.isEmpty {
         return reply(id, true, appInfo.merging(["text": sel, "method": "ax"]) { a, _ in a })
     }
+    if (msg["selectAll"] as? Bool) == true {
+        postKey(0, flags: .maskCommand) // Cmd+A: no selection, so check the whole field
+        sleepMs(80)
+        if let el = el, let sel = axString(el, kAXSelectedTextAttribute as String), !sel.isEmpty {
+            return reply(id, true, appInfo.merging(["text": sel, "method": "ax"]) { a, _ in a })
+        }
+    }
     // Fallback: simulate Cmd+C.
     if let text = clipboardCopySelection(), !text.isEmpty {
         return reply(id, true, appInfo.merging(["text": text, "method": "clipboard"]) { a, _ in a })

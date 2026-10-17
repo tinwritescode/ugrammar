@@ -4,12 +4,12 @@ import { BADGE_SIZE, badgePosition, clampToArea, type CaretRect } from "../share
 export type BadgeState = "idle" | "checking";
 
 const PAGE = `<!doctype html><meta charset="utf-8"><style>
-html,body{margin:0;background:transparent;overflow:hidden}
+html,body{margin:0;background:transparent;overflow:hidden;cursor:pointer}
 #d{width:14px;height:14px;margin:4px;border-radius:50%;background:#30d158;box-shadow:0 0 0 2px rgba(255,255,255,.85),0 1px 4px rgba(0,0,0,.3);transition:transform .15s}
 .typing{transform:scale(1.25)}
 .checking{background:transparent;border:2px solid rgba(0,0,0,.15);border-top-color:#0a84ff;box-sizing:border-box;animation:s .7s linear infinite}
 @keyframes s{to{transform:rotate(360deg)}}
-</style><div id="d"></div>`;
+</style><div id="d" title="Check grammar"></div><script>document.addEventListener("mousedown",()=>{location.hash="#click"})</script>`;
 
 /** Small always-on-top dot beside the focused text field: shows Proofy is running and sees you typing. */
 export class TypingBadge {
@@ -19,7 +19,7 @@ export class TypingBadge {
   private state: BadgeState = "idle";
   private busy = false;
 
-  constructor(private fetchCaret: () => Promise<(CaretRect & { visible: boolean }) | null>) {}
+  constructor(private onClick: () => void, private fetchCaret: () => Promise<(CaretRect & { visible: boolean }) | null>) {}
 
   start() {
     if (this.timer) return;
@@ -48,7 +48,7 @@ export class TypingBadge {
       alwaysOnTop: true, skipTaskbar: true, hasShadow: false, type: "panel", focusable: false,
       webPreferences: { sandbox: true, contextIsolation: true },
     });
-    this.win.setIgnoreMouseEvents(true);
+    this.win.webContents.on("did-navigate-in-page", (_e, url) => { if (url.endsWith("#click")) { this.onClick(); void this.win?.webContents.executeJavaScript("location.hash=''").catch(() => {}); } });
     this.win.setAlwaysOnTop(true, "screen-saver");
     this.win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     void this.win.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(PAGE));

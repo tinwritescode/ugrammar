@@ -70,7 +70,7 @@ function refreshTray() {
   ]));
 }
 
-const badge = new TypingBadge(async () => {
+const badge = new TypingBadge(() => void onBadgeClick(), async () => {
   const r = await helper.request<any>("caret", { excluded: store.get().excludedApps }, 1500);
   return r.ok ? r : null;
 });
@@ -166,8 +166,8 @@ const debug = (msg: string) => { if (process.env.PROOFY_DEBUG) appendFileSync("/
 
 const flow = new FixFlow({
   settings: () => store.get(),
-  readSelection: async (excluded) => {
-    const r = await helper.request<SelectionReply>("read", { excluded }, 8000);
+  readSelection: async (excluded, selectAll) => {
+    const r = await helper.request<SelectionReply>("read", { excluded, selectAll }, 8000);
     debug(`read app=${r.bundleId} ok=${r.ok} method=${r.method ?? "-"} err=${r.error ?? "-"}`);
     return r;
   },
@@ -184,6 +184,13 @@ const flow = new FixFlow({
   showLoading,
   hideLoading: () => closePopover(),
 });
+
+async function onBadgeClick() {
+  debug("badge click");
+  closePopover();
+  await new Promise((r) => setTimeout(r, 0));
+  debug(`outcome=${await flow.run({ selectAll: true })} status=${status.kind}`);
+}
 
 async function onHotkey() {
   debug("hotkey");
