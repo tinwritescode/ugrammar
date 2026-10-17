@@ -45,6 +45,8 @@ function render(s: TrayState) {
   $("heroTitle").textContent = cfg.paused ? "Đang nghỉ" : "Đang canh chính tả";
   $("hotkey").textContent = s.hotkey;
   $("perm").hidden = s.status !== "needs_permission";
+  $("update").hidden = !s.update;
+  $("updateText").textContent = `Bản ${s.update ?? ""} đã cài xong.`;
   const mode = cfg.autoCheck ? cfg.autoCheckMode : "off";
   for (const b of $("mode").querySelectorAll<HTMLButtonElement>("button")) b.classList.toggle("on", b.dataset.mode === mode);
   for (const c of document.querySelectorAll<HTMLInputElement>(".switch")) c.checked = cfg[c.dataset.key as SwitchKey];
@@ -88,6 +90,7 @@ panel.addEventListener("scroll", () => {
 });
 $("openAX").onclick = () => proofy.trayAction("ax");
 $("quit").onclick = () => proofy.trayAction("quit");
+$("restart").onclick = () => proofy.trayAction("restart");
 $("github").onclick = (e) => {
   e.preventDefault();
   proofy.trayAction("github");

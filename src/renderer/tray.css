@@ -39,9 +39,11 @@ button.icon svg { width: 18px; height: 18px; }
 .fab svg { width: 24px; height: 24px; stroke-width: 2.4; }
 [data-paused="true"] .fab { background: var(--surface-2); color: var(--muted); box-shadow: inset 0 1px 0 rgba(255,255,255,.06); }
 
-.warn { display: flex; align-items: center; gap: 10px; background: var(--expense-bg); color: var(--expense); border-radius: 16px; padding: 10px 12px; font-size: 12px; font-weight: 600; }
-.warn span { flex: 1; }
-.warn button { height: 30px; padding: 0 12px; flex-shrink: 0; }
+.banner { display: flex; align-items: center; gap: 10px; border-radius: 16px; padding: 10px 12px; font-size: 12px; font-weight: 600; }
+.banner span { flex: 1; }
+.banner button { height: 30px; padding: 0 12px; flex-shrink: 0; }
+.warn { background: var(--expense-bg); color: var(--expense); }
+.fresh { background: var(--income-bg); color: var(--income); }
 
 .label { display: flex; align-items: center; gap: 6px; padding: 4px 4px 0; font-size: 12px; color: var(--muted); }
 
