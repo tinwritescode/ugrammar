@@ -15,13 +15,14 @@ use tauri::{AppHandle, Emitter, Manager, Wry};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
 use tauri_plugin_notification::NotificationExt;
 use tokio::sync::{mpsc, oneshot};
-use ugrammar_core::badge::{badge_position, clamp_to_area, CaretRect, BADGE_SIZE};
+use ugrammar_core::badge::{badge_position, clamp_to_area, Area as BadgeArea, CaretRect, BADGE_SIZE};
 use ugrammar_core::engine::{CheckRequest, OpenAICompatibleEngine, OpenAIConfig, Tone};
 use ugrammar_core::insights::InsightStore;
 use ugrammar_core::settings::{AutoCheckMode, Mod, Settings, SettingsStore};
 
 pub const APP_NAME: &str = "ugrammar";
 const REPO_URL: &str = "https://github.com/tinwritescode/ugrammar";
+const AX_SETTINGS_URL: &str = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
 const KEY_SERVICE: &str = "Proofy";
 const KEY_ACCOUNT: &str = "api-key";
 pub const POPOVER_W: f64 = 460.0;
@@ -45,6 +46,36 @@ pub fn debug(msg: &str) {
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/proofy-debug.log") {
         let _ = writeln!(f, "{}.{:03} {msg}", t.as_secs(), t.subsec_millis());
     }
+}
+
+fn open(target: &str) {
+    let _ = std::process::Command::new("/usr/bin/open").arg(target).spawn();
+}
+
+fn parse_tone(id: &str) -> Option<Tone> {
+    serde_json::from_value(json!(id)).ok()
+}
+
+fn outcome(ok: bool, method: &Option<String>, error: &Option<String>) -> String {
+    format!("ok={ok} method={} err={}", method.as_deref().unwrap_or("-"), error.as_deref().unwrap_or("-"))
+}
+
+/// Ticks `tick` every `period` until `live` turns false; missed ticks are skipped.
+fn spawn_poll<F>(period: Duration, live: impl Fn() -> bool + Send + 'static, tick: impl Fn() -> F + Send + 'static)
+where
+    F: std::future::Future<Output = ()> + Send,
+{
+    tauri::async_runtime::spawn(async move {
+        let mut every = tokio::time::interval(period);
+        every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            every.tick().await;
+            if !live() {
+                break;
+            }
+            tick().await;
+        }
+    });
 }
 
 /// `y` = top edge when placed below, `alt_y` = bottom edge when placed above.
@@ -239,18 +270,20 @@ impl Ctx {
         self.helper.request(cmd, json!({ "service": KEY_SERVICE, "account": KEY_ACCOUNT, "value": key }), 10 * SECOND).await;
     }
 
-    async fn engine(&self, min_timeout_ms: u64) -> OpenAICompatibleEngine {
+    async fn check_text(&self, text: String, explain: bool, tone: Option<Tone>, min_timeout_ms: u64) -> Result<(String, Vec<String>), String> {
         let s = self.settings();
         let cfg = OpenAIConfig { endpoint: s.endpoint, model: s.model, timeout_ms: s.timeout_ms.max(min_timeout_ms) };
-        OpenAICompatibleEngine::new(cfg, self.api_key().await)
+        let req = CheckRequest { text, dictionary: s.dictionary, explain, explain_lang: Some(s.explain_lang), tone };
+        let engine = OpenAICompatibleEngine::new(cfg, self.api_key().await);
+        engine.check(&req).await.map(|r| (r.corrected, r.notes.unwrap_or_default())).map_err(|e| e.message)
     }
 
     pub fn notify(&self, body: &str) {
         let _ = self.app.notification().builder().title(APP_NAME).body(body).show();
     }
 
-    pub fn open_ax_settings(&self) {
-        let _ = std::process::Command::new("/usr/bin/open").arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility").spawn();
+    async fn prompt_ax(&self) {
+        self.helper.request("prompt_ax", json!({}), 10 * SECOND).await;
     }
 
     pub async fn ax_trusted(&self) -> bool {
@@ -322,7 +355,7 @@ impl Ctx {
                 let _ = t.set_menu(Some(m));
             }
         }
-        if self.app.get_webview_window("tray").is_some_and(|w| w.is_visible().unwrap_or(false)) {
+        if ui::is_visible(&self.app, "tray") {
             tauri::async_runtime::spawn(async move {
                 let st = self.tray_state().await;
                 let _ = self.app.emit_to("tray", "tray:state", st);
@@ -341,16 +374,15 @@ impl Ctx {
     }
 
     pub fn hide_tray(&self) {
-        let Some(w) = self.app.get_webview_window("tray") else { return };
-        if !w.is_visible().unwrap_or(false) {
+        if !ui::is_visible(&self.app, "tray") {
             return;
         }
-        let _ = w.hide();
+        ui::hide(&self.app, "tray");
         self.tray.lock().unwrap().hidden_at = Some(Instant::now());
     }
 
     pub async fn toggle_tray(&'static self) {
-        if self.app.get_webview_window("tray").is_some_and(|w| w.is_visible().unwrap_or(false)) {
+        if ui::is_visible(&self.app, "tray") {
             return self.hide_tray();
         }
         // This click is what blurred it closed.
@@ -365,8 +397,7 @@ impl Ctx {
         let _ = self.app.emit_to("tray", "tray:state", self.tray_state().await);
         if let Some(b) = ui::tray_rect(&self.app) {
             let area = ui::screen_near(&self.app, b.x, b.y).work;
-            let x = (b.x + b.w / 2.0 - TRAY_W / 2.0).max(area.x + 8.0).min(area.x + area.w - TRAY_W - 8.0);
-            ui::place(&self.app, "tray", x, area.y + 6.0);
+            ui::place(&self.app, "tray", area.fit_x(b.x + b.w / 2.0 - TRAY_W / 2.0, TRAY_W), area.y + 6.0);
         }
         let _ = w.show();
         let _ = w.set_focus();
@@ -387,18 +418,16 @@ impl Ctx {
         match a {
             "quit" => self.app.exit(0),
             "ax" => {
-                self.helper.request("prompt_ax", json!({}), 10 * SECOND).await;
-                self.open_ax_settings();
+                self.prompt_ax().await;
+                open(AX_SETTINGS_URL);
             }
-            "github" => {
-                let _ = std::process::Command::new("/usr/bin/open").arg(REPO_URL).spawn();
-            }
+            "github" => open(REPO_URL),
             tone => {
-                let Ok(tone) = serde_json::from_value::<Tone>(json!(tone)) else { return };
+                let Some(tone) = parse_tone(tone) else { return };
                 // Hand focus back to the app the user was writing in, then rewrite its selection.
                 let _ = self.app.hide();
                 tokio::time::sleep(Duration::from_millis(200)).await;
-                debug(&format!("tone={tone:?} outcome={:?}", self.run_flow(false, Some(tone)).await));
+                self.rewrite(tone).await;
             }
         }
     }
@@ -441,9 +470,8 @@ impl Ctx {
             (p.anchor.unwrap_or_else(|| self.cursor_anchor()), p.size)
         };
         let area = ui::screen_near(&self.app, a.x, a.y).work;
-        let x = (a.x - w / 2.0).max(area.x + 8.0).min(area.x + area.w - w - 8.0);
         let y = if a.y + h <= area.y + area.h - 8.0 { a.y } else { a.alt_y - h };
-        ui::place(&self.app, "popover", x, y.max(area.y + 8.0).min(area.y + area.h - h - 8.0));
+        ui::place(&self.app, "popover", area.fit_x(a.x - w / 2.0, w), area.fit_y(y, h));
     }
 
     fn show_popover(&self, payload: PopoverPayload, anchor: Option<Anchor>) {
@@ -529,22 +557,19 @@ impl Ctx {
         *self.flow_anchor.lock().unwrap()
     }
 
-    pub async fn on_hotkey(&'static self) {
-        debug("hotkey");
+    /// Hotkey checks the selection; a badge click checks the whole field.
+    pub async fn manual_check(&'static self, trigger: &str, select_all: bool) {
+        debug(trigger);
         // A still-open popover counts as dismissed.
         self.close_popover(Choice::Dismiss);
         tokio::task::yield_now().await;
-        let outcome = self.run_flow(false, None).await;
+        let outcome = self.run_flow(select_all, None).await;
         let st = self.status();
         debug(&format!("outcome={outcome:?} status={:?}{}", st.kind, st.message.map(|m| format!(" ({m})")).unwrap_or_default()));
     }
 
-    pub async fn on_badge_click(&'static self) {
-        debug("badge click");
-        self.close_popover(Choice::Dismiss);
-        tokio::task::yield_now().await;
-        let outcome = self.run_flow(true, None).await;
-        debug(&format!("outcome={outcome:?} status={:?}", self.status().kind));
+    async fn rewrite(&'static self, tone: Tone) {
+        debug(&format!("tone={tone:?} outcome={:?}", self.run_flow(false, Some(tone)).await));
     }
 
     pub async fn register_hotkey(&self) {
@@ -572,9 +597,7 @@ impl Ctx {
                 ],
             )
         })();
-        if let (Ok(m), Some(w)) = (menu, a.get_webview_window("popover")) {
-            let _ = w.popup_menu(&m);
-        }
+        self.popup_menu("popover", menu);
     }
 
     pub fn on_badge_menu(&self) {
@@ -591,7 +614,11 @@ impl Ctx {
                 ],
             )
         })();
-        if let (Ok(m), Some(w)) = (menu, a.get_webview_window("badge")) {
+        self.popup_menu("badge", menu);
+    }
+
+    fn popup_menu(&self, window: &str, menu: tauri::Result<Menu<Wry>>) {
+        if let (Ok(m), Some(w)) = (menu, self.app.get_webview_window(window)) {
             let _ = w.popup_menu(&m);
         }
     }
@@ -602,7 +629,7 @@ impl Ctx {
                 let paused = !self.settings().paused;
                 self.update_settings(json!({ "paused": paused }));
             }
-            "ax" => self.open_ax_settings(),
+            "ax" => open(AX_SETTINGS_URL),
             "settings" => self.open_panel().await,
             "quit" => self.app.exit(0),
             "badge_hide" => {
@@ -621,15 +648,11 @@ impl Ctx {
                     self.update_settings(json!({ "paused": false }));
                 }
             }
-            "tone_formal" | "tone_friendly" | "tone_short" => {
-                let tone = match id {
-                    "tone_formal" => Tone::Formal,
-                    "tone_friendly" => Tone::Friendly,
-                    _ => Tone::Short,
-                };
-                debug(&format!("tone={tone:?} outcome={:?}", self.run_flow(false, Some(tone)).await));
+            _ => {
+                if let Some(tone) = id.strip_prefix("tone_").and_then(parse_tone) {
+                    self.rewrite(tone).await;
+                }
             }
-            _ => {}
         }
     }
 
@@ -637,7 +660,7 @@ impl Ctx {
         while let Some(e) = rx.recv().await {
             match e {
                 HelperEvent::Hotkey => {
-                    tauri::async_runtime::spawn(self.on_hotkey());
+                    tauri::async_runtime::spawn(self.manual_check("hotkey", false));
                 }
                 HelperEvent::Hotkey2 => {
                     let _ = self.app.run_on_main_thread(move || self.on_hotkey2());
@@ -654,17 +677,7 @@ impl Ctx {
             return;
         }
         let generation = self.auto_generation.fetch_add(1, Ordering::SeqCst) + 1;
-        tauri::async_runtime::spawn(async move {
-            let mut every = tokio::time::interval(Duration::from_millis(POLL_MS));
-            every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            loop {
-                every.tick().await;
-                if self.auto_generation.load(Ordering::SeqCst) != generation {
-                    break;
-                }
-                self.auto_tick().await;
-            }
-        });
+        spawn_poll(Duration::from_millis(POLL_MS), move || self.auto_generation.load(Ordering::SeqCst) == generation, move || self.auto_tick());
     }
 
     pub fn auto_stop(&'static self) {
@@ -731,18 +744,10 @@ impl Ctx {
     }
 
     async fn auto_check(&self, job: &Job) -> Result<(String, Vec<String>), String> {
-        let s = self.settings();
-        // Background: slow gateways need more than the 10s hotkey default.
-        let engine = self.engine(30000).await;
         // Reasons cost ~1.5 s; only the popup shows them up front.
-        let req = CheckRequest {
-            text: job.sentence.clone(),
-            dictionary: s.dictionary,
-            explain: job.popup && s.explain,
-            explain_lang: Some(s.explain_lang),
-            tone: None,
-        };
-        engine.check(&req).await.map(|r| (r.corrected, r.notes.unwrap_or_default())).map_err(|e| e.message)
+        let explain = job.popup && self.settings().explain;
+        // Background: slow gateways need more than the 10s hotkey default.
+        self.check_text(job.sentence.clone(), explain, None, 30000).await
     }
 
     fn blocked(&self) -> bool {
@@ -784,14 +789,25 @@ impl Ctx {
         self.range_anchor(it.fix.start, it.fix.end - it.fix.start, known).await
     }
 
-    async fn replace_range(&self, loc: usize, len: usize, text: &str, expect: &str) -> Reply {
+    /// Writes an accepted auto-check fix back over `original` and records it; says why when it cannot.
+    async fn write_fix(&self, start: usize, len: usize, original: &str, corrected: &str, notes: &[String]) -> bool {
         let pid = self.auto.lock().unwrap().pid;
-        self.helper.request_as("replace_range", json!({ "loc": loc, "len": len, "text": text, "expect": expect, "pid": pid }), 5 * SECOND).await
+        let args = json!({ "loc": start, "len": len, "text": corrected, "expect": original, "pid": pid });
+        let r: Reply = self.helper.request_as("replace_range", args, 5 * SECOND).await;
+        debug(&format!("auto write {}", outcome(r.ok, &r.method, &r.error)));
+        if r.ok {
+            self.insights.lock().unwrap().record(original, corrected, notes);
+        } else {
+            let e = r.error.as_deref().unwrap_or_default();
+            self.notify(&if e == "stale" { "Text changed; fix skipped.".into() } else { format!("Could not replace ({e}). Try the hotkey instead.") });
+        }
+        r.ok
     }
 
-    fn replace_failed(&self, r: &Reply) {
-        let e = r.error.as_deref().unwrap_or_default();
-        self.notify(&if e == "stale" { "Text changed; fix skipped.".into() } else { format!("Could not replace ({e}). Try the hotkey instead.") });
+    /// A pending "Checking…" hint must not land over a newer popover.
+    fn cancel_loading(&self) {
+        self.loading_seq.fetch_add(1, Ordering::SeqCst);
+        self.loading_shown.store(false, Ordering::SeqCst);
     }
 
     /// Popup mode: the whole sentence's fix with reasons, opened as soon as the check comes back.
@@ -805,24 +821,12 @@ impl Ctx {
         if self.blocked() || self.card_open.swap(true, Ordering::SeqCst) {
             return;
         }
-        // A pending hint must not land over the popup.
-        self.loading_seq.fetch_add(1, Ordering::SeqCst);
-        self.loading_shown.store(false, Ordering::SeqCst);
+        self.cancel_loading();
         let anchor = self.issue_anchor(&it).await;
         let choice = self.show_diff(PopoverPayload::diff(&fix.original, &fix.corrected, app_name, fix.notes.clone()), anchor).await;
         let len = fix.original.encode_utf16().count();
-        if choice == Choice::Dismiss {
-            self.auto.lock().unwrap().resolve_sentence(fix.start, len, None);
-        } else {
-            let w = self.replace_range(fix.start, len, &fix.corrected, &fix.original).await;
-            debug(&format!("auto popup write ok={} method={} err={}", w.ok, w.method.as_deref().unwrap_or("-"), w.error.as_deref().unwrap_or("-")));
-            self.auto.lock().unwrap().resolve_sentence(fix.start, len, w.ok.then_some(fix.corrected.as_str()));
-            if w.ok {
-                self.insights.lock().unwrap().record(&fix.original, &fix.corrected, &fix.notes);
-            } else {
-                self.replace_failed(&w);
-            }
-        }
+        let applied = choice == Choice::Accept && self.write_fix(fix.start, len, &fix.original, &fix.corrected, &fix.notes).await;
+        self.auto.lock().unwrap().resolve_sentence(fix.start, len, applied.then_some(fix.corrected.as_str()));
         self.card_open.store(false, Ordering::SeqCst);
     }
 
@@ -839,17 +843,10 @@ impl Ctx {
         let notes: Vec<String> = f.reason.iter().cloned().collect();
         let anchor = self.issue_anchor(&it).await;
         let choice = self.show_diff(PopoverPayload::diff(&f.original, &f.replacement, app_name, notes.clone()), anchor).await;
-        if choice == Choice::Dismiss {
-            self.auto.lock().unwrap().dismiss(id);
+        if choice == Choice::Accept && self.write_fix(f.start, f.end - f.start, &f.original, &f.replacement, &notes).await {
+            self.auto.lock().unwrap().applied(id);
         } else {
-            let w = self.replace_range(f.start, f.end - f.start, &f.replacement, &f.original).await;
-            if w.ok {
-                self.insights.lock().unwrap().record(&f.original, &f.replacement, &notes);
-                self.auto.lock().unwrap().applied(id);
-            } else {
-                self.auto.lock().unwrap().dismiss(id);
-                self.replace_failed(&w);
-            }
+            self.auto.lock().unwrap().dismiss(id);
         }
         self.card_open.store(false, Ordering::SeqCst);
     }
@@ -915,17 +912,7 @@ impl Ctx {
             b.generation += 1;
             b.generation
         };
-        tauri::async_runtime::spawn(async move {
-            let mut every = tokio::time::interval(Duration::from_millis(400));
-            every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            loop {
-                every.tick().await;
-                if self.badge.lock().unwrap().generation != generation {
-                    break;
-                }
-                self.badge_tick().await;
-            }
-        });
+        spawn_poll(Duration::from_millis(400), move || self.badge.lock().unwrap().generation == generation, move || self.badge_tick());
     }
 
     fn badge_stop(&self) {
@@ -976,8 +963,7 @@ impl Ctx {
         };
         let pos = badge_position(caret);
         let area = ui::screen_near(&self.app, pos.x, pos.y).work;
-        let area = serde_json::from_value(json!({ "x": area.x, "y": area.y, "width": area.w, "height": area.h })).expect("area shape");
-        let p = clamp_to_area(pos, area);
+        let p = clamp_to_area(pos, BadgeArea { x: area.x, y: area.y, width: area.w, height: area.h });
         let (cx, cy) = ui::cursor(&self.app);
         let (moved, show) = {
             let mut b = self.badge.lock().unwrap();
@@ -1025,7 +1011,7 @@ impl Ctx {
         }
         if !trusted {
             self.set_status(Status { kind: StatusKind::NeedsPermission, message: Some("Grant Accessibility permission".into()) });
-            self.helper.request("prompt_ax", json!({}), 10 * SECOND).await;
+            self.prompt_ax().await;
         }
     }
 
@@ -1068,26 +1054,18 @@ impl FlowDeps for Ctx {
 
     async fn read_selection(&self, excluded: &[String], select_all: bool) -> Selection {
         let r: Selection = self.helper.request_as("read", json!({ "excluded": excluded, "selectAll": select_all }), 8 * SECOND).await;
-        debug(&format!(
-            "read app={} ok={} method={} err={}",
-            r.bundle_id.as_deref().unwrap_or("-"),
-            r.ok,
-            r.method.as_deref().unwrap_or("-"),
-            r.error.as_deref().unwrap_or("-")
-        ));
+        debug(&format!("read app={} {}", r.bundle_id.as_deref().unwrap_or("-"), outcome(r.ok, &r.method, &r.error)));
         r
     }
 
     async fn write_selection(&self, text: &str, pid: Option<i64>, method: Option<&str>) -> Reply {
         let r: Reply = self.helper.request_as("write", json!({ "text": text, "pid": pid, "method": method }), 8 * SECOND).await;
-        debug(&format!("write ok={} method={} err={}", r.ok, r.method.as_deref().unwrap_or("-"), r.error.as_deref().unwrap_or("-")));
+        debug(&format!("write {}", outcome(r.ok, &r.method, &r.error)));
         r
     }
 
     async fn check(&self, text: &str, tone: Option<Tone>) -> Result<(String, Vec<String>), String> {
-        let s = Ctx::settings(self);
-        let req = CheckRequest { text: text.into(), dictionary: s.dictionary, explain: s.explain, explain_lang: Some(s.explain_lang), tone };
-        self.engine(0).await.check(&req).await.map(|r| (r.corrected, r.notes.unwrap_or_default())).map_err(|e| e.message)
+        self.check_text(text.into(), Ctx::settings(self).explain, tone, 0).await
     }
 
     fn set_status(&self, s: Status) {
@@ -1108,8 +1086,7 @@ impl FlowDeps for Ctx {
 
     // The manual check owns the popover now.
     fn show_loading(&self) {
-        self.loading_seq.fetch_add(1, Ordering::SeqCst);
-        self.loading_shown.store(false, Ordering::SeqCst);
+        self.cancel_loading();
         Ctx::show_loading(self, self.flow_anchor());
     }
 

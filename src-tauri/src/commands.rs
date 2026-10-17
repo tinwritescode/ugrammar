@@ -27,7 +27,7 @@ pub async fn popover_current() -> Option<PopoverPayload> {
 
 #[tauri::command]
 pub async fn badge_click() {
-    tauri::async_runtime::spawn(ctx().on_badge_click());
+    tauri::async_runtime::spawn(ctx().manual_check("badge click", true));
 }
 
 #[tauri::command]
