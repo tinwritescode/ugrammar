@@ -14,6 +14,7 @@ use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem}
 use tauri::{AppHandle, Emitter, Manager, Wry};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
 use tauri_plugin_notification::NotificationExt;
+use tauri_plugin_updater::UpdaterExt;
 use tokio::sync::{mpsc, oneshot};
 use ugrammar_core::badge::{badge_position, clamp_to_area, Area as BadgeArea, CaretRect, BADGE_SIZE};
 use ugrammar_core::engine::{CheckRequest, OpenAICompatibleEngine, OpenAIConfig, Tone};
@@ -30,6 +31,7 @@ pub const TRAY_W: f64 = 344.0;
 const TRAY_MAX_H: f64 = 600.0;
 const KEEP_MS: u128 = 8000;
 const SECOND: Duration = Duration::from_secs(1);
+const UPDATE_EVERY: Duration = Duration::from_secs(6 * 3600);
 
 pub static CTX: OnceLock<Ctx> = OnceLock::new();
 
@@ -146,6 +148,7 @@ pub struct Ctx {
     badge: Mutex<Badge>,
     tray: Mutex<TrayPanel>,
     resume_generation: AtomicU64,
+    update: Mutex<Option<String>>,
     started: Instant,
 }
 
@@ -215,6 +218,7 @@ pub fn init(app: &AppHandle) -> mpsc::UnboundedReceiver<HelperEvent> {
         badge: Mutex::default(),
         tray: Mutex::default(),
         resume_generation: AtomicU64::new(0),
+        update: Mutex::new(None),
         started: Instant::now(),
     };
     let _ = CTX.set(ctx);
@@ -320,6 +324,7 @@ impl Ctx {
             hotkey: self.hotkey_label(),
             insights: self.insights.lock().unwrap().top(5),
             has_api_key,
+            update: self.update.lock().unwrap().clone(),
         }
     }
 
@@ -422,6 +427,7 @@ impl Ctx {
                 open(AX_SETTINGS_URL);
             }
             "github" => open(REPO_URL),
+            "restart" => self.app.restart(),
             tone => {
                 let Some(tone) = parse_tone(tone) else { return };
                 // Hand focus back to the app the user was writing in, then rewrite its selection.
@@ -996,12 +1002,38 @@ impl Ctx {
         self.badge_paint(moved);
     }
 
+    // ---------- Update ----------
+
+    /// Installs a newer release over this bundle; it runs from the next launch.
+    async fn check_update(&'static self) {
+        // A dev binary is not inside an .app bundle to replace.
+        if cfg!(debug_assertions) || self.update.lock().unwrap().is_some() {
+            return;
+        }
+        let installed = async {
+            let Some(u) = self.app.updater()?.check().await? else { return Ok(None) };
+            u.download_and_install(|_, _| {}, || {}).await?;
+            Ok::<_, tauri_plugin_updater::Error>(Some(u.version))
+        };
+        match installed.await {
+            Ok(Some(v)) => {
+                debug(&format!("update installed {v}"));
+                self.notify(&format!("Version {v} is installed. Restart {APP_NAME} from the menu bar to use it."));
+                *self.update.lock().unwrap() = Some(v);
+                self.refresh_tray();
+            }
+            Ok(None) => debug("update none"),
+            Err(e) => debug(&format!("update failed: {e}")),
+        }
+    }
+
     // ---------- Lifecycle ----------
 
     pub async fn start(&'static self) {
         if self.settings().auto_check {
             self.auto_start();
         }
+        spawn_poll(UPDATE_EVERY, || true, move || self.check_update());
         self.set_status(Status::of(StatusKind::Idle));
         let trusted = self.ax_trusted().await;
         self.register_hotkey().await;

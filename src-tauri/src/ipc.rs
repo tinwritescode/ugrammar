@@ -86,4 +86,7 @@ pub struct TrayState {
     pub hotkey: String,
     pub insights: Vec<Insight>,
     pub has_api_key: bool,
+    /// Version installed in place, waiting for a restart.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub update: Option<String>,
 }
