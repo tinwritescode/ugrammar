@@ -2,6 +2,7 @@ import {
   app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, screen, shell, Tray,
 } from "electron";
 import { execFile } from "node:child_process";
+import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { OpenAICompatibleEngine } from "./engine/openai";
 import { FixFlow, type Status } from "./flow";
@@ -97,7 +98,7 @@ function ensurePopover(): BrowserWindow {
   if (popover && !popover.isDestroyed()) return popover;
   popover = new BrowserWindow({
     width: 460, height: 200, show: false, frame: false, resizable: false, movable: true,
-    alwaysOnTop: true, skipTaskbar: true, hasShadow: true, transparent: true, type: "panel",
+    alwaysOnTop: true, skipTaskbar: true, hasShadow: true, transparent: true, type: "panel", focusable: false,
     webPreferences: { preload: join(root, "dist/preload.cjs"), sandbox: true, contextIsolation: true },
   });
   popover.setAlwaysOnTop(true, "screen-saver");
@@ -147,10 +148,21 @@ ipcMain.on("popover:resize", (_e, h: number) => {
 });
 
 // ---------- Flow ----------
+// Opt-in diagnostics (PROOFY_DEBUG=1): outcomes only, never text content.
+const debug = (msg: string) => { if (process.env.PROOFY_DEBUG) appendFileSync("/tmp/proofy-debug.log", `${new Date().toISOString()} ${msg}\n`); };
+
 const flow = new FixFlow({
   settings: () => store.get(),
-  readSelection: (excluded) => helper.request<SelectionReply>("read", { excluded }, 8000),
-  writeSelection: (text, pid, method) => helper.request("write", { text, pid, method }, 8000),
+  readSelection: async (excluded) => {
+    const r = await helper.request<SelectionReply>("read", { excluded }, 8000);
+    debug(`read app=${r.bundleId} ok=${r.ok} method=${r.method ?? "-"} err=${r.error ?? "-"}`);
+    return r;
+  },
+  writeSelection: async (text, pid, method) => {
+    const r = await helper.request("write", { text, pid, method }, 8000);
+    debug(`write ok=${r.ok} method=${r.method ?? "-"} err=${r.error ?? "-"}`);
+    return r;
+  },
   makeEngine,
   setStatus,
   notify,
@@ -159,9 +171,10 @@ const flow = new FixFlow({
 });
 
 async function onHotkey() {
+  debug("hotkey");
   closePopover(); // a still-open popover counts as dismissed
   await new Promise((r) => setTimeout(r, 0));
-  await flow.run();
+  debug(`outcome=${await flow.run()} status=${status.kind}${status.message ? ` (${status.message})` : ""}`);
 }
 
 async function registerHotkey() {

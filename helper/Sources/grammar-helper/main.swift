@@ -39,10 +39,12 @@ func axString(_ el: AXUIElement, _ attr: String) -> String? {
     return v as? String
 }
 
-func focusedElement() -> AXUIElement? {
-    let sys = AXUIElementCreateSystemWide()
+/// Focused element of the frontmost app (or of `pid`), not system-wide: our own popover must never be mistaken for the target.
+func focusedElement(pid: pid_t? = nil) -> AXUIElement? {
+    guard let p = pid ?? NSWorkspace.shared.frontmostApplication?.processIdentifier else { return nil }
+    let appEl = AXUIElementCreateApplication(p)
     var v: CFTypeRef?
-    guard AXUIElementCopyAttributeValue(sys, kAXFocusedUIElementAttribute as CFString, &v) == .success,
+    guard AXUIElementCopyAttributeValue(appEl, kAXFocusedUIElementAttribute as CFString, &v) == .success,
           let v = v, CFGetTypeID(v) == AXUIElementGetTypeID() else { return nil }
     return (v as! AXUIElement)
 }
@@ -105,9 +107,9 @@ func clipboardPaste(_ text: String) {
     let snap = PasteboardSnapshot(pb)
     pb.clearContents()
     pb.setString(text, forType: .string)
-    sleepMs(30)
+    sleepMs(150) // let the accept hotkey's modifiers release before pasting
     postKey(CGKeyCode(kVK_ANSI_V), flags: .maskCommand)
-    sleepMs(250)
+    sleepMs(500)
     snap.restore(pb)
 }
 
