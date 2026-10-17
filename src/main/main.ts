@@ -50,9 +50,9 @@ async function getApiKey(): Promise<string | null> {
   return r.ok ? (r.value ?? null) : null;
 }
 
-async function makeEngine() {
+async function makeEngine(minTimeoutMs = 0) {
   const s = store.get();
-  return new OpenAICompatibleEngine({ endpoint: s.endpoint, model: s.model, timeoutMs: s.timeoutMs }, { apiKey: await getApiKey() });
+  return new OpenAICompatibleEngine({ endpoint: s.endpoint, model: s.model, timeoutMs: Math.max(s.timeoutMs, minTimeoutMs) }, { apiKey: await getApiKey() });
 }
 
 // ---------- Tray ----------
@@ -216,7 +216,8 @@ const underlines = new UnderlineOverlay(root, (id) => void openIssueCard(id));
 const auto = new AutoChecker({
   settings: () => store.get(),
   snapshot: (excluded, ranges) => helper.request<Snapshot>("snapshot", { excluded, ranges }, 3000),
-  makeEngine,
+  makeEngine: () => makeEngine(30000), // background: slow gateways need more than the 10s hotkey default
+  log: (m) => debug(`auto ${m}`),
   onMarks: (marks) => (cardOpen ? undefined : underlines.set(marks)),
 });
 

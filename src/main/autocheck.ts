@@ -31,6 +31,8 @@ export interface AutoDeps {
   /** Underline marks changed; empty = hide all. */
   onMarks(marks: { id: number; x: number; y: number; w: number; h: number }[]): void;
   now?(): number;
+  /** Diagnostics: outcomes only, never text. */
+  log?(msg: string): void;
 }
 
 const POLL_MS = 600;
@@ -59,6 +61,7 @@ export class AutoChecker {
   private nextId = 1;
   private field = "";
   private lastText = "";
+  private loggedText = "";
   private changedAt = 0;
   private checked = new Set<string>();
   issues: Issue[] = [];
@@ -102,7 +105,7 @@ export class AutoChecker {
       const s = this.d.settings();
       if (!s.autoCheck || s.paused) return this.reset();
       const snap = await this.d.snapshot(s.excludedApps, this.issues.map((i) => ({ loc: i.start, len: i.end - i.start })));
-      if (!snap.ok || !snap.visible || typeof snap.text !== "string") return this.reset();
+      if (!snap.ok || !snap.visible || typeof snap.text !== "string") { this.d.log?.(`snap ok=${snap.ok} visible=${snap.visible} err=${snap.error ?? "-"}`); return this.reset(); }
       const text = snap.text;
       const field = `${snap.pid}:${snap.bundleId}`;
       const now = this.d.now?.() ?? Date.now();
@@ -117,9 +120,13 @@ export class AutoChecker {
       this.publish(snap);
       if (this.checking || now - this.changedAt < STABLE_MS || (snap.selLen ?? 0) > 0) return;
       const sent = sentenceEndingAt(text, snap.caret ?? 0);
-      if (!sent || this.checked.has(sent.text)) return;
+      if (!sent || this.checked.has(sent.text)) {
+        if (text !== this.loggedText) { this.loggedText = text; this.d.log?.(`no sentence app=${snap.bundleId} len=${text.length} caret=${snap.caret} cached=${!!sent}`); }
+        return;
+      }
       this.checked.add(sent.text);
       if (this.checked.size > MAX_CACHE) this.checked.delete(this.checked.values().next().value!);
+      this.d.log?.(`check start app=${snap.bundleId} len=${sent.text.length}`);
       void this.check(sent.start, sent.text, field);
     } catch {
       this.d.onMarks([]);
@@ -141,7 +148,8 @@ export class AutoChecker {
     try {
       const s = this.d.settings();
       const engine = await this.d.makeEngine();
-      const r = await engine.check({ text: sentence, dictionary: s.dictionary, explain: s.explain, explainLang: s.explainLang });
+      const r = await engine.check({ text: sentence, dictionary: s.dictionary, explain: false });
+      this.d.log?.(`check done changed=${r.corrected !== sentence} stale=${field !== this.field}`);
       if (field !== this.field || r.corrected === sentence) return;
       const notes = r.notes ?? [];
       const fresh = diffSpans(sentence, r.corrected).filter((sp) => sp.original.trim()).map((sp, i): Issue => {
@@ -155,10 +163,11 @@ export class AutoChecker {
           reason: notes.find((n) => n.toLowerCase().startsWith(w)) ?? (notes.length === 1 ? notes[0] : notes[i]),
         };
       });
+      this.d.log?.(`issues=${fresh.length}`);
       this.issues = revalidate([...this.issues.filter((i) => i.end <= offset || i.start >= offset + sentence.length), ...fresh], this.lastText);
-    } catch {
-      // network/engine errors are silent in the background; the manual hotkey still reports them
-      this.checked.delete(sentence);
+    } catch (e) {
+      this.d.log?.(`check error ${(e as Error).message}`);
+      // network/engine errors are silent in the background (sentence stays cached: no retry loop); the manual hotkey still reports them
     } finally {
       this.checking = false;
     }
