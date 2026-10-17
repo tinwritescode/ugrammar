@@ -50,7 +50,6 @@ fn main() {
             commands::set_api_key,
             commands::test_connection,
             commands::pick_app,
-            commands::open_accessibility_settings,
             commands::get_tray,
             commands::tray_action,
             commands::tray_resize,

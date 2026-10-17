@@ -1,7 +1,7 @@
 use crate::autocheck::{AutoChecker, Effect, Issue, Job, Mark, Rect, SentenceFix, Snapshot, POLL_MS};
 use crate::flow::{FixFlow, FixOutcome, FlowDeps};
 use crate::helper::{Helper, HelperEvent, Reply, Selection};
-use crate::ipc::{Choice, PopoverKind, PopoverPayload, SettingsView, Status, StatusKind, TrayState};
+use crate::ipc::{Choice, PopoverKind, PopoverPayload, Status, StatusKind, TrayState};
 use crate::ui;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -276,11 +276,6 @@ impl Ctx {
     }
 
     // ---------- Tray ----------
-
-    pub async fn settings_view(&self) -> SettingsView {
-        let (key, trusted) = tokio::join!(self.api_key(), self.ax_trusted());
-        SettingsView { settings: self.settings(), has_api_key: key.is_some(), ax_trusted: trusted, insights: self.insights.lock().unwrap().top(10) }
-    }
 
     pub async fn tray_state(&self) -> TrayState {
         let has_api_key = self.api_key().await.is_some();

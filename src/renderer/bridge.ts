@@ -19,7 +19,6 @@ export const proofy: ProofyApi = {
   setApiKey: (key) => invoke("set_api_key", { key }),
   testConnection: (draft) => invoke("test_connection", { draft }),
   pickApp: () => invoke("pick_app"),
-  openAccessibilitySettings: () => invoke("open_accessibility_settings"),
   getTray: () => invoke("get_tray"),
   onTray: (cb) => void listen<TrayState>("tray:state", (e) => cb(e.payload)),
   trayAction: (action) => void invoke("tray_action", { action }),
