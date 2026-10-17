@@ -40,9 +40,17 @@ func axString(_ el: AXUIElement, _ attr: String) -> String? {
 }
 
 /// Focused element of the frontmost app (or of `pid`), not system-wide: our own popover must never be mistaken for the target.
+var axEnabledPids = Set<pid_t>()
+
 func focusedElement(pid: pid_t? = nil) -> AXUIElement? {
     guard let p = pid ?? NSWorkspace.shared.frontmostApplication?.processIdentifier else { return nil }
     let appEl = AXUIElementCreateApplication(p)
+    if !axEnabledPids.contains(p) { // Chromium/Electron apps (Claude, Slack, Chrome) only build their AX tree on request
+        axEnabledPids.insert(p)
+        AXUIElementSetAttributeValue(appEl, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        AXUIElementSetAttributeValue(appEl, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+        sleepMs(120)
+    }
     var v: CFTypeRef?
     guard AXUIElementCopyAttributeValue(appEl, kAXFocusedUIElementAttribute as CFString, &v) == .success,
           let v = v, CFGetTypeID(v) == AXUIElementGetTypeID() else { return nil }
