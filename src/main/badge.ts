@@ -1,4 +1,5 @@
-import { BrowserWindow, screen } from "electron";
+import { BrowserWindow, ipcMain, screen } from "electron";
+import { join } from "node:path";
 import { BADGE_SIZE, badgePosition, clampToArea, type CaretRect } from "../shared/badge";
 
 const KEEP_MS = 8000;
@@ -6,12 +7,22 @@ const KEEP_MS = 8000;
 export type BadgeState = "idle" | "checking";
 
 const PAGE = `<!doctype html><meta charset="utf-8"><style>
-html,body{margin:0;background:transparent;overflow:hidden;cursor:pointer}
-#d{width:14px;height:14px;margin:4px;border-radius:50%;background:#30d158;box-shadow:0 0 0 2px rgba(255,255,255,.85),0 1px 4px rgba(0,0,0,.3);transition:transform .15s}
-.typing{transform:scale(1.25)}
-.checking{background:transparent;border:2px solid rgba(0,0,0,.15);border-top-color:#0a84ff;box-sizing:border-box;animation:s .7s linear infinite}
+html,body{margin:0;background:transparent;overflow:hidden;cursor:pointer;user-select:none}
+#d{position:relative;width:22px;height:22px;transition:transform .15s}
+#d svg{display:block;width:22px;height:22px;filter:drop-shadow(0 1px 3px rgba(0,0,0,.35))}
+#d:hover{transform:scale(1.12)}
+.typing{transform:scale(1.18)}
+.ring{display:none;position:absolute;inset:-2px;border-radius:50%;border:2px solid transparent;border-top-color:#fff;animation:s .7s linear infinite}
+.checking .ring{display:block}
 @keyframes s{to{transform:rotate(360deg)}}
-</style><div id="d" title="Check grammar"></div><script>document.addEventListener("mousedown",()=>{location.hash="#click"})</script>`;
+</style>
+<div id="d" title="Check grammar">
+<svg viewBox="0 0 22 22"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4f9bff"/><stop offset="1" stop-color="#6a4cff"/></linearGradient></defs>
+<rect width="22" height="22" rx="6" fill="url(#g)"/>
+<path d="M7.5 16.5V5.5h4.1a3.1 3.1 0 0 1 0 6.2H7.5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M12.2 15.6l1.7 1.7 3.3-3.6" fill="none" stroke="#9ff0b4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+<span class="ring"></span></div>
+<script>document.addEventListener("mousedown",()=>proofy.badgeClick())</script>`;
 
 /** Small always-on-top dot beside the focused text field: shows Proofy is running and sees you typing. */
 export class TypingBadge {
@@ -23,7 +34,13 @@ export class TypingBadge {
   private lastMove = 0;
   private seen = false;
 
-  constructor(private onClick: () => void, private fetchCaret: () => Promise<(CaretRect & { visible: boolean; selLen?: number }) | null>) {}
+  constructor(
+    private root: string,
+    private onClick: () => void,
+    private fetchCaret: () => Promise<(CaretRect & { visible: boolean; selLen?: number }) | null>,
+  ) {
+    ipcMain.on("badge:click", () => this.onClick());
+  }
 
   start() {
     if (this.timer) return;
@@ -50,9 +67,8 @@ export class TypingBadge {
     this.win = new BrowserWindow({
       width: BADGE_SIZE, height: BADGE_SIZE, show: false, frame: false, resizable: false, transparent: true,
       alwaysOnTop: true, skipTaskbar: true, hasShadow: false, type: "panel", focusable: false,
-      webPreferences: { sandbox: true, contextIsolation: true },
+      webPreferences: { preload: join(this.root, "dist/preload.cjs"), sandbox: true, contextIsolation: true },
     });
-    this.win.webContents.on("did-navigate-in-page", (_e, url) => { if (url.endsWith("#click")) { this.onClick(); void this.win?.webContents.executeJavaScript("location.hash=''").catch(() => {}); } });
     this.win.setAlwaysOnTop(true, "screen-saver");
     this.win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     void this.win.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(PAGE));

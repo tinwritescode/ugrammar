@@ -25,6 +25,7 @@ export interface ProofyApi {
   onPopover(cb: (p: PopoverPayload) => void): void;
   popoverAction(action: "accept" | "dismiss"): void;
   popoverResize(height: number): void;
+  badgeClick(): void;
   getSettings(): Promise<SettingsView>;
   saveSettings(patch: Partial<Settings>): Promise<SettingsView>;
   setApiKey(key: string): Promise<SettingsView>;

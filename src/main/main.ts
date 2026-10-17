@@ -70,7 +70,7 @@ function refreshTray() {
   ]));
 }
 
-const badge = new TypingBadge(() => void onBadgeClick(), async () => {
+const badge = new TypingBadge(root, () => void onBadgeClick(), async () => {
   const r = await helper.request<any>("caret", { excluded: store.get().excludedApps }, 1500);
   return r.ok ? r : null;
 });
