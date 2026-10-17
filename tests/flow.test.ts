@@ -4,7 +4,7 @@ import { EngineError } from "../src/main/engine/types";
 import { DEFAULT_SETTINGS } from "../src/main/settings";
 
 function setup(over: Partial<FlowDeps> = {}, paused = false) {
-  const log = { status: [] as Status[], notes: [] as string[], msgs: [] as string[], writes: [] as string[], engineCalls: 0 };
+  const log = { status: [] as Status[], notes: [] as string[], msgs: [] as string[], writes: [] as string[], engineCalls: 0, loading: 0, hidden: 0 };
   const deps: FlowDeps = {
     settings: () => ({ ...DEFAULT_SETTINGS, paused, dictionary: ["Xpiki"] }),
     readSelection: async () => ({ ok: true, text: "I has a apple.", method: "ax", pid: 7, appName: "Notes" }),
@@ -17,6 +17,8 @@ function setup(over: Partial<FlowDeps> = {}, paused = false) {
     notify: (m) => log.notes.push(m),
     showDiff: async () => "accept",
     showMessage: (m) => log.msgs.push(m),
+    showLoading: () => log.loading++,
+    hideLoading: () => log.hidden++,
     ...over,
   };
   return { flow: new FixFlow(deps), log };
@@ -27,6 +29,12 @@ describe("FixFlow", () => {
     const { flow, log } = setup();
     expect(await flow.run()).toBe("applied");
     expect(log.writes).toEqual(["I have an apple."]);
+  });
+  test("shows loading before the engine call and hides it on error", async () => {
+    const { flow, log } = setup({ makeEngine: async () => { throw new EngineError("timeout", "Timed out"); } });
+    expect(await flow.run()).toBe("error");
+    expect(log.loading).toBe(1);
+    expect(log.hidden).toBe(1);
   });
   test("dismiss never writes", async () => {
     const { flow, log } = setup({ showDiff: async () => "dismiss" });

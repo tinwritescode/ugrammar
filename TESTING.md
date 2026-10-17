@@ -26,7 +26,7 @@ Automated: `bun test` (engine, diff, settings, flow) and `bun run typecheck`.
 - [ ] Slow endpoint (>10 s): timeout error, text unchanged.
 
 ## Settings (menu bar → Settings…)
-- [ ] Defaults: endpoint `http://localhost:20128/v1`, model `xpiki/gpt-6.1-sol`.
+- [ ] Defaults: endpoint `http://localhost:20128/v1`, model `cx/gpt-6-luna`.
 - [ ] **Test connection** ✓ with defaults; ✕ with a bad endpoint, message shown.
 - [ ] Change model → Save → `~/Library/Application Support/Proofy/settings.json` updated → relaunch keeps it.
 - [ ] API key: enter, Save → "(stored in Keychain)"; `grep -i key settings.json` finds no secret; Keychain Access has item "Proofy / api-key".
@@ -36,5 +36,6 @@ Automated: `bun test` (engine, diff, settings, flow) and `bun run typecheck`.
 - [ ] Accessibility not granted → status "Needs Accessibility permission", banner in Settings with button.
 
 ## Menu bar
+- [ ] Loading: right after ⌥⌘G a "Checking…" spinner popover appears, then becomes the diff (or disappears on error).
 - [ ] Status line: Ready / Checking… / Paused / Error / Needs Accessibility permission.
 - [ ] Quit stops the helper (`pgrep grammar-helper` empty).

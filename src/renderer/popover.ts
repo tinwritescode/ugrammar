@@ -11,7 +11,9 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEl
 
 function render(p: PopoverPayload) {
   card.replaceChildren();
-  if (p.kind === "message") {
+  if (p.kind === "loading") {
+    card.append(el("div", { className: "loading" }, el("span", { className: "spin" }), p.message ?? "Checking…"));
+  } else if (p.kind === "message") {
     card.append(el("div", { className: "msg" }, p.message ?? ""));
   } else {
     const body = el("div", { className: "text" });

@@ -24,6 +24,9 @@ export interface FlowDeps {
   /** Resolves when the user picks, or when superseded via cancelPopover(). */
   showDiff(p: PopoverPayload): Promise<"accept" | "dismiss">;
   showMessage(message: string): void;
+  /** Immediate "Checking…" feedback; replaced by showDiff/showMessage or removed by hideLoading. */
+  showLoading(): void;
+  hideLoading(): void;
 }
 
 const READ_ERRORS: Record<string, string> = {
@@ -48,9 +51,11 @@ export class FixFlow {
     this.busy = true;
     try {
       this.d.setStatus({ kind: "checking" });
+      this.d.showLoading();
       const sel = await this.d.readSelection(s.excludedApps);
       if (!sel.ok || !sel.text) {
         if (sel.error === "accessibility_not_trusted") {
+          this.d.hideLoading();
           this.d.setStatus({ kind: "needs_permission", message: "Grant Accessibility permission" });
           this.d.notify("Proofy needs Accessibility permission (System Settings → Privacy & Security → Accessibility).");
           return "needs_permission";
@@ -67,6 +72,7 @@ export class FixFlow {
         corrected = (await engine.check({ text: sel.text, dictionary: s.dictionary })).corrected;
       } catch (e) {
         const msg = (e as Error).message || "Engine error";
+        this.d.hideLoading();
         this.d.setStatus({ kind: "error", message: msg });
         this.d.notify(`Check failed: ${msg}. Your text was not changed.`);
         return "error";

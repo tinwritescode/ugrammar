@@ -4,7 +4,7 @@ Menu-bar grammar fixer for macOS. Select text anywhere, press ⌥⌘G, review th
 
 - `bun install && bun run dev` — builds the Swift helper (`helper/`), bundles the app, launches Electron.
 - `bun test` / `bun run typecheck`
-- Engine: any OpenAI-compatible endpoint (default `http://localhost:20128/v1`, model `xpiki/gpt-6.1-sol`).
+- Engine: any OpenAI-compatible endpoint (default `http://localhost:20128/v1`, model `cx/gpt-6-luna`).
 - Settings: `~/Library/Application Support/Proofy/settings.json`; API key in Keychain.
 - See `TESTING.md`, `SPIKE.md`; design decisions in `~/grammar-app-decisions.md`.
 

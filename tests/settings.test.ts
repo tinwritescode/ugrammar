@@ -12,7 +12,7 @@ describe("SettingsStore", () => {
   test("defaults when no file", () => {
     const s = new SettingsStore(dir);
     expect(s.get().endpoint).toBe("http://localhost:20128/v1");
-    expect(s.get().model).toBe("xpiki/gpt-6.1-sol");
+    expect(s.get().model).toBe("cx/gpt-6-luna");
     expect(s.get().hotkey).toEqual({ key: "G", mods: ["alt", "cmd"] });
   });
   test("persists to settings.json and reloads", () => {

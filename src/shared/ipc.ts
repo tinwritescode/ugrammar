@@ -2,7 +2,7 @@ import type { DiffOp } from "./diff";
 import type { Settings } from "../main/settings";
 
 export interface PopoverPayload {
-  kind: "diff" | "message";
+  kind: "diff" | "message" | "loading";
   original?: string;
   corrected?: string;
   ops?: DiffOp[];

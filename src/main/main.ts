@@ -140,6 +140,11 @@ function showMessage(message: string) {
   messageTimer = setTimeout(() => closePopover(), 2200);
 }
 
+function showLoading() {
+  closePopover();
+  void showPopover({ kind: "loading", message: "Checking…" });
+}
+
 ipcMain.on("popover:action", (_e, a: "accept" | "dismiss") => closePopover(a));
 ipcMain.on("popover:resize", (_e, h: number) => {
   if (popover && !popover.isDestroyed() && h > 0) {
@@ -168,6 +173,8 @@ const flow = new FixFlow({
   notify,
   showDiff,
   showMessage,
+  showLoading,
+  hideLoading: () => closePopover(),
 });
 
 async function onHotkey() {
