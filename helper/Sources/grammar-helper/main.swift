@@ -138,6 +138,37 @@ func handleRead(_ id: Any?, _ msg: [String: Any]) {
     reply(id, false, appInfo.merging(["error": "no_selection"]) { a, _ in a })
 }
 
+/// Where to anchor the typing badge: caret bounds if the app reports them, else the focused text element's frame.
+func handleCaret(_ id: Any?, _ msg: [String: Any]) {
+    guard axTrusted(), let app = NSWorkspace.shared.frontmostApplication else { return reply(id, true, ["visible": false]) }
+    let bundle = app.bundleIdentifier ?? ""
+    if ((msg["excluded"] as? [String]) ?? []).contains(bundle) { return reply(id, true, ["visible": false]) }
+    guard let el = focusedElement(), !isSecure(el) else { return reply(id, true, ["visible": false]) }
+    let role = axString(el, kAXRoleAttribute as String) ?? ""
+    var rangeRef: CFTypeRef?
+    let hasRange = AXUIElementCopyAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, &rangeRef) == .success
+    guard hasRange || ["AXTextField", "AXTextArea", "AXComboBox"].contains(role) else { return reply(id, true, ["visible": false]) }
+    var rect = CGRect.zero
+    var precise = false
+    if hasRange, let r = rangeRef {
+        var b: CFTypeRef?
+        if AXUIElementCopyParameterizedAttributeValue(el, kAXBoundsForRangeParameterizedAttribute as CFString, r, &b) == .success,
+           let b = b, CFGetTypeID(b) == AXValueGetTypeID(),
+           AXValueGetValue(b as! AXValue, .cgRect, &rect), rect.height > 0, rect.height < 200 { precise = true }
+    }
+    if !precise {
+        var pv: CFTypeRef?, sv: CFTypeRef?
+        var pt = CGPoint.zero, sz = CGSize.zero
+        guard AXUIElementCopyAttributeValue(el, kAXPositionAttribute as CFString, &pv) == .success,
+              AXUIElementCopyAttributeValue(el, kAXSizeAttribute as CFString, &sv) == .success,
+              AXValueGetValue(pv as! AXValue, .cgPoint, &pt), AXValueGetValue(sv as! AXValue, .cgSize, &sz) else {
+            return reply(id, true, ["visible": false])
+        }
+        rect = CGRect(origin: pt, size: sz)
+    }
+    reply(id, true, ["visible": true, "precise": precise, "x": rect.origin.x, "y": rect.origin.y, "w": rect.size.width, "h": rect.size.height, "bundleId": bundle])
+}
+
 func handleWrite(_ id: Any?, _ msg: [String: Any]) {
     guard axTrusted() else { return reply(id, false, ["error": "accessibility_not_trusted"]) }
     guard let text = msg["text"] as? String else { return reply(id, false, ["error": "missing_text"]) }
@@ -254,6 +285,7 @@ func dispatch(_ msg: [String: Any]) {
         err == nil ? reply(id, true) : reply(id, false, ["error": err!])
     case "read": handleRead(id, msg)
     case "write": handleWrite(id, msg)
+    case "caret": handleCaret(id, msg)
     case let c where c.hasPrefix("keychain_"): handleKeychain(id, c, msg)
     default: reply(id, false, ["error": "unknown_command"])
     }

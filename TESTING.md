@@ -39,3 +39,9 @@ Automated: `bun test` (engine, diff, settings, flow) and `bun run typecheck`.
 - [ ] Loading: right after ⌥⌘G a "Checking…" spinner popover appears, then becomes the diff (or disappears on error).
 - [ ] Status line: Ready / Checking… / Paused / Error / Needs Accessibility permission.
 - [ ] Quit stops the helper (`pgrep grammar-helper` empty).
+
+## Typing badge
+- [ ] Click into a TextEdit/Notes text area: a small green dot appears beside the caret and pulses while you type/move.
+- [ ] In Chrome/Electron apps (no caret bounds) the dot sits in the bottom-right corner of the focused field.
+- [ ] Dot is hidden in password fields, excluded apps, when paused, and without Accessibility permission.
+- [ ] Press ⌥⌘G: dot turns into a spinner while checking.

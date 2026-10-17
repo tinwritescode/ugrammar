@@ -8,6 +8,7 @@ import { OpenAICompatibleEngine } from "./engine/openai";
 import { FixFlow, type Status } from "./flow";
 import { HelperClient, type SelectionReply } from "./helper";
 import { SettingsStore } from "./settings";
+import { TypingBadge } from "./badge";
 import type { PopoverPayload, SettingsView, TestResult } from "../shared/ipc";
 
 const APP_NAME = "Proofy";
@@ -69,9 +70,16 @@ function refreshTray() {
   ]));
 }
 
+const badge = new TypingBadge(async () => {
+  const r = await helper.request<any>("caret", { excluded: store.get().excludedApps }, 1500);
+  return r.ok ? r : null;
+});
+
 function setStatus(s: Status) {
   status = s.kind === "idle" && store.get().paused ? { kind: "paused" } : s;
   refreshTray();
+  if (status.kind === "paused" || status.kind === "needs_permission") badge.stop();
+  else { badge.start(); badge.setState(status.kind === "checking" ? "checking" : "idle"); }
 }
 
 function notify(body: string) {
