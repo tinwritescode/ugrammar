@@ -4765,7 +4765,7 @@ dependencies = [
 
 [[package]]
 name = "ugrammar"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "indexmap 2.14.2",
  "objc2",
