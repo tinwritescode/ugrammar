@@ -369,14 +369,16 @@ app.whenReady().then(async () => {
   await registerHotkey();
 
   if (!store.get().firstRunAcknowledged) {
+    const hk = store.get().hotkey;
     await dialog.showMessageBox({
       type: "info",
-      message: `${APP_NAME} sends your selected text to your configured AI endpoint`,
+      message: `Welcome to ${APP_NAME}`,
       detail:
-        `When you press the hotkey, the selected text is sent to ${store.get().endpoint} to be proofread.\n\n` +
-        "• Password fields and excluded apps are never read.\n• Text is never logged or stored.\n" +
-        "• Use the menu bar to pause at any time.\n\nYou can change the endpoint in Settings.",
-      buttons: ["OK"],
+        "1. Grant Accessibility permission when macOS asks (System Settings → Privacy & Security → Accessibility). Needed to read and replace text.\n" +
+        `2. Select text and press ${hk.mods.map((m) => ({ cmd: "⌘", alt: "⌥", ctrl: "⌃", shift: "⇧" })[m]).join("")}${hk.key} to proofread. ⌥⌘T rewrites in a tone.\n` +
+        "3. Optional: Settings → Checking → Auto-check underlines mistakes as you type.\n\n" +
+        `Privacy: checked text is sent to ${store.get().endpoint} (change it in Settings). Password fields and excluded apps are never read. Text is never logged or stored.`,
+      buttons: ["Get started"],
     });
     store.update({ firstRunAcknowledged: true });
   }
