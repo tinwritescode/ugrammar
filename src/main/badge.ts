@@ -23,7 +23,7 @@ export class TypingBadge {
   private lastMove = 0;
   private seen = false;
 
-  constructor(private onClick: () => void, private fetchCaret: () => Promise<(CaretRect & { visible: boolean }) | null>) {}
+  constructor(private onClick: () => void, private fetchCaret: () => Promise<(CaretRect & { visible: boolean; selLen?: number }) | null>) {}
 
   start() {
     if (this.timer) return;
@@ -80,7 +80,7 @@ export class TypingBadge {
       this.last = key;
       const now = Date.now();
       // Show only after the first change in a field (i.e. typing), and for a few seconds after the last one.
-      if (moved && this.seen) this.lastMove = now;
+      if ((moved && this.seen) || (r.selLen ?? 0) > 0) this.lastMove = now; // typing or a live selection
       this.seen = true;
       const cur = screen.getCursorScreenPoint();
       const b = win.getBounds();

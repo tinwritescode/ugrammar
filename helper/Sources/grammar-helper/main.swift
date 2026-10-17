@@ -157,6 +157,11 @@ func handleCaret(_ id: Any?, _ msg: [String: Any]) {
     guard hasRange || ["AXTextField", "AXTextArea", "AXComboBox"].contains(role) else { return reply(id, true, ["visible": false]) }
     var rect = CGRect.zero
     var precise = false
+    var selLen = 0
+    if hasRange, let r = rangeRef {
+        var cf = CFRange(location: 0, length: 0)
+        if AXValueGetValue(r as! AXValue, .cfRange, &cf) { selLen = cf.length }
+    }
     if hasRange, let r = rangeRef {
         var b: CFTypeRef?
         if AXUIElementCopyParameterizedAttributeValue(el, kAXBoundsForRangeParameterizedAttribute as CFString, r, &b) == .success,
@@ -173,7 +178,7 @@ func handleCaret(_ id: Any?, _ msg: [String: Any]) {
         }
         rect = CGRect(origin: pt, size: sz)
     }
-    reply(id, true, ["visible": true, "precise": precise, "x": rect.origin.x, "y": rect.origin.y, "w": rect.size.width, "h": rect.size.height, "bundleId": bundle])
+    reply(id, true, ["visible": true, "precise": precise, "selLen": selLen, "x": rect.origin.x, "y": rect.origin.y, "w": rect.size.width, "h": rect.size.height, "bundleId": bundle])
 }
 
 func handleWrite(_ id: Any?, _ msg: [String: Any]) {
