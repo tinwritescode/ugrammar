@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { OpenAICompatibleEngine, buildMessages, cleanModelOutput } from "../src/main/engine/openai";
+import { OpenAICompatibleEngine, buildMessages, cleanModelOutput, postProcess } from "../src/main/engine/openai";
 import { EngineError } from "../src/main/engine/types";
 import { diffWords } from "../src/shared/diff";
 
@@ -16,7 +16,7 @@ describe("prompt", () => {
     const m = buildMessages("hello", ["Xpiki", "Kubernetes"]);
     expect(m[0].content).toContain("Xpiki");
     expect(m[0].content).toContain("Kubernetes");
-    expect(m[1].content).toBe("hello");
+    expect(m[1].content).toContain("hello");
   });
   test("no dictionary section when empty", () => {
     expect(buildMessages("hi", [])[0].content).not.toContain("Do not change these words");
@@ -24,6 +24,12 @@ describe("prompt", () => {
 });
 
 describe("cleanModelOutput", () => {
+  test("extracts <corrected> tags, ignoring chatter", () => {
+    expect(cleanModelOutput("Sure! <corrected>I have an apple.</corrected> Done", "x")).toBe("I have an apple.");
+  });
+  test("keeps inner newlines", () => {
+    expect(cleanModelOutput("<corrected>\nA.\nB.\n</corrected>", "x")).toBe("A.\nB.");
+  });
   test("strips code fences and wrapping quotes", () => {
     expect(cleanModelOutput("```\nHello.\n```", "x")).toBe("Hello.");
     expect(cleanModelOutput('"Hello."', "x")).toBe("Hello.");
@@ -46,6 +52,11 @@ describe("OpenAICompatibleEngine", () => {
     expect(seen!.url).toBe("http://localhost:20128/v1/chat/completions");
     expect((seen!.init.headers as Record<string, string>).Authorization).toBe("Bearer k");
     expect(JSON.parse(seen!.init.body as string).model).toBe("m");
+  });
+  test("parses SSE stream bodies", async () => {
+    const sse = ["I h", "ave"].map((c) => `data: ${JSON.stringify({ choices: [{ delta: { content: c } }] })}\n\n`).join("") + "data: [DONE]\n\n";
+    const e = new OpenAICompatibleEngine(cfg, { fetch: fakeFetch(() => new Response(sse, { status: 200 })) });
+    expect((await e.check({ text: "I h ave", dictionary: [] })).corrected).toBe("I have");
   });
   test("no auth header without key; trailing slash tolerated", async () => {
     let seen: { url: string; init: RequestInit } | undefined;
@@ -113,5 +124,16 @@ describe("diffWords", () => {
     const d = diffWords(a, b);
     expect(d.map((o) => (o.type === "insert" ? "" : o.text)).join("")).toBe(a);
     expect(d.map((o) => (o.type === "delete" ? "" : o.text)).join("")).toBe(b);
+  });
+});
+
+describe("postProcess", () => {
+  test("restores dictionary casing, whole words only", () => {
+    expect(postProcess("Xpiki is ok", "XPiki is ok", ["Xpiki"])).toBe("Xpiki is ok");
+    expect(postProcess("x", "Xpikis", ["Xpiki"])).toBe("Xpikis");
+  });
+  test("straightens curly quotes unless original had them", () => {
+    expect(postProcess("dont", "doesn’t", [])).toBe("doesn't");
+    expect(postProcess("it’s", "it’s", [])).toBe("it’s");
   });
 });
