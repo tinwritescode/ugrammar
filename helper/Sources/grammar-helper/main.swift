@@ -288,18 +288,42 @@ func handleReplaceRange(_ id: Any?, _ msg: [String: Any]) {
     guard loc >= 0, loc + len <= u.count, String(utf16CodeUnits: Array(u[loc..<(loc + len)]), count: len) == expect else {
         return reply(id, false, ["error": "stale"])
     }
-    var oldCaret = CFRange(location: loc + len, length: 0)
-    var rr: CFTypeRef?
-    if AXUIElementCopyAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, &rr) == .success, let r = rr { _ = AXValueGetValue(r as! AXValue, .cfRange, &oldCaret) }
+    let oldCaret = selectedRange(el) ?? CFRange(location: loc + len, length: 0)
     guard let sel = cfRangeValue(loc, len),
-          AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, sel) == .success,
-          AXUIElementSetAttributeValue(el, kAXSelectedTextAttribute as CFString, text as CFTypeRef) == .success else {
+          AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, sel) == .success else {
         return reply(id, false, ["error": "range_unsupported"])
+    }
+    var method = "ax"
+    var applied = AXUIElementSetAttributeValue(el, kAXSelectedTextAttribute as CFString, text as CFTypeRef) == .success
+    // Chromium contenteditables (Electron apps, web pages) report success but ignore the write.
+    if applied { sleepMs(60); applied = rangeHolds(el, loc, text) }
+    if !applied {
+        guard selectedRange(el).map({ $0.location == loc && $0.length == len }) ?? false else {
+            return reply(id, false, ["error": "range_unsupported"])
+        }
+        clipboardPaste(text)
+        guard rangeHolds(el, loc, text) else { return reply(id, false, ["error": "write_ignored"]) }
+        method = "clipboard"
     }
     let delta = text.utf16.count - len
     let newCaret = oldCaret.location >= loc + len ? oldCaret.location + delta : loc + text.utf16.count
     if let c = cfRangeValue(max(0, newCaret), 0) { AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, c) }
-    reply(id, true)
+    reply(id, true, ["method": method])
+}
+
+func selectedRange(_ el: AXUIElement) -> CFRange? {
+    var rr: CFTypeRef?
+    var r = CFRange(location: 0, length: 0)
+    guard AXUIElementCopyAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, &rr) == .success, let v = rr,
+          AXValueGetValue(v as! AXValue, .cfRange, &r) else { return nil }
+    return r
+}
+
+/** Whether the field's value now has `text` at `loc`. */
+func rangeHolds(_ el: AXUIElement, _ loc: Int, _ text: String) -> Bool {
+    guard let value = axString(el, kAXValueAttribute as String) else { return false }
+    let u = Array(value.utf16), t = Array(text.utf16)
+    return loc + t.count <= u.count && Array(u[loc..<(loc + t.count)]) == t
 }
 
 func handleWrite(_ id: Any?, _ msg: [String: Any]) {

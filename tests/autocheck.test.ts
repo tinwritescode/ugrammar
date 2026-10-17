@@ -76,8 +76,30 @@ test("popup mode: fix with reasons opens once the check returns", async () => {
   await r.step(); await r.step(); await r.step();
   expect(r.popups.map((p) => [p.start, p.original, p.corrected])).toEqual([[0, S, "She doesn't like it."]]);
   expect(r.explain()).toBe(true);
-  r.auto.resolveSentence(0, S.length, false);
+  r.auto.resolveSentence(0, S.length);
   await r.step();
+  expect(r.auto.issues).toEqual([]);
+});
+
+test("popup mode: accepted sentence is not checked again", async () => {
+  const r = rig("popup");
+  await r.step(); await r.step(); await r.step();
+  const fixed = "She doesn't like it.";
+  r.set({ text: fixed, caret: fixed.length });
+  r.auto.resolveSentence(0, S.length, fixed);
+  await r.step(); await r.step(); await r.step();
+  expect(r.calls()).toBe(1);
+  expect(r.popups.length).toBe(1);
+});
+
+test("underline fix applied: patched sentence is not checked again", async () => {
+  const r = rig();
+  await r.step(); await r.step(); await r.step();
+  const fixed = "She doesn't like it.";
+  r.set({ text: fixed, caret: fixed.length });
+  r.auto.applied(r.auto.issues[0].id);
+  await r.step(); await r.step(); await r.step();
+  expect(r.calls()).toBe(1);
   expect(r.auto.issues).toEqual([]);
 });
 

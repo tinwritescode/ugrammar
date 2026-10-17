@@ -26,9 +26,10 @@ export interface TrayState {
   settings: Settings;
   hotkey: string;
   insights: SettingsView["insights"];
+  hasApiKey: boolean;
 }
 
-export type TrayAction = "settings" | "quit" | "ax" | Tone;
+export type TrayAction = "quit" | "ax" | Tone;
 
 export interface TestResult {
   ok: boolean;
@@ -43,7 +44,6 @@ export interface ProofyApi {
   badgeMenu(): void;
   underlineClick(): void;
   clearInsights(): Promise<SettingsView>;
-  getSettings(): Promise<SettingsView>;
   saveSettings(patch: Partial<Settings>): Promise<SettingsView>;
   setApiKey(key: string): Promise<SettingsView>;
   testConnection(draft: { endpoint: string; model: string; apiKey?: string }): Promise<TestResult>;

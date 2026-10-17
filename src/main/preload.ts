@@ -9,7 +9,6 @@ const api: ProofyApi = {
   clearInsights: () => ipcRenderer.invoke("settings:clearInsights"),
   badgeClick: () => ipcRenderer.send("badge:click"),
   popoverResize: (h, w) => ipcRenderer.send("popover:resize", h, w),
-  getSettings: () => ipcRenderer.invoke("settings:get"),
   saveSettings: (p) => ipcRenderer.invoke("settings:save", p),
   setApiKey: (k) => ipcRenderer.invoke("settings:setKey", k),
   testConnection: (d) => ipcRenderer.invoke("settings:test", d),

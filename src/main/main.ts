@@ -40,7 +40,6 @@ const insights = new InsightStore(settingsDir);
 let tray: Tray | null = null;
 let status: Status = { kind: "idle" };
 let popover: BrowserWindow | null = null;
-let settingsWin: BrowserWindow | null = null;
 let popoverResolve: ((c: "accept" | "dismiss") => void) | null = null;
 let messageTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -77,7 +76,7 @@ function trayMenu() {
     ...(status.kind === "needs_permission"
       ? [{ label: "Open Accessibility Settings…", click: openAXSettings }]
       : []),
-    { label: "Settings…", accelerator: "Cmd+,", click: openSettings },
+    { label: "Settings…", click: () => void openPanel() },
     { type: "separator" },
     { label: `Quit ${APP_NAME}`, accelerator: "Cmd+Q", click: () => app.quit() },
   ]);
@@ -87,16 +86,19 @@ function refreshTray() {
   if (!tray) return;
   tray.setTitle(STATUS_TITLE[status.kind]);
   tray.setToolTip(`${APP_NAME} — ${STATUS_LABEL[status.kind]}`);
-  if (trayWin && !trayWin.isDestroyed() && trayWin.isVisible()) trayWin.webContents.send("tray:state", trayState());
+  if (trayWin && !trayWin.isDestroyed() && trayWin.isVisible()) void trayState().then((st) => trayWin?.webContents.send("tray:state", st));
 }
 
 // ---------- Tray panel ----------
 const TRAY_W = 344;
+const TRAY_MAX_H = 600;
 let trayWin: BrowserWindow | null = null;
 let trayHiddenAt = 0;
+let trayPinned = false; // a native dialog over the panel must not blur it closed
 
-const trayState = (): TrayState => ({
-  status: status.kind, message: status.message, settings: store.get(), hotkey: hotkeyLabel(), insights: insights.top(3),
+const trayState = async (): Promise<TrayState> => ({
+  status: status.kind, message: status.message, settings: store.get(), hotkey: hotkeyLabel(), insights: insights.top(5),
+  hasApiKey: !!(await getApiKey()),
 });
 
 function ensureTrayWin(): BrowserWindow {
@@ -107,7 +109,7 @@ function ensureTrayWin(): BrowserWindow {
     webPreferences: { preload: join(root, "dist/preload.cjs"), sandbox: true, contextIsolation: true },
   });
   trayWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  trayWin.on("blur", () => hideTrayWin());
+  trayWin.on("blur", () => trayPinned || hideTrayWin());
   trayWin.loadFile(join(root, "dist/renderer/tray.html"));
   return trayWin;
 }
@@ -130,9 +132,13 @@ function placeTrayWin(win: BrowserWindow) {
 async function toggleTrayWin() {
   if (trayWin?.isVisible()) return hideTrayWin();
   if (Date.now() - trayHiddenAt < 250) return; // this click is what blurred it closed
+  await openPanel();
+}
+
+async function openPanel() {
   const win = ensureTrayWin();
   if (win.webContents.isLoading()) await new Promise<void>((r) => win.webContents.once("did-finish-load", () => r()));
-  win.webContents.send("tray:state", trayState());
+  win.webContents.send("tray:state", await trayState());
   placeTrayWin(win);
   win.show();
   win.focus();
@@ -140,15 +146,16 @@ async function toggleTrayWin() {
 
 ipcMain.handle("tray:get", trayState);
 ipcMain.on("tray:resize", (_e, h: number) => {
-  if (trayWin && !trayWin.isDestroyed() && h > 0) trayWin.setSize(TRAY_W, Math.min(Math.ceil(h), 720));
+  if (!trayWin || trayWin.isDestroyed() || h <= 0) return;
+  const area = screen.getDisplayMatching(trayWin.getBounds()).workArea;
+  trayWin.setSize(TRAY_W, Math.min(Math.ceil(h), TRAY_MAX_H, area.height - 12)); // taller content scrolls inside
 });
 ipcMain.on("tray:action", async (_e, a: TrayAction) => {
   hideTrayWin();
-  if (a === "settings") return openSettings();
   if (a === "quit") return app.quit();
   if (a === "ax") { await helper.request("prompt_ax"); return openAXSettings(); }
   // Tone: hand focus back to the app the user was writing in, then rewrite its selection.
-  if (!settingsWin?.isVisible()) app.hide();
+  app.hide();
   await new Promise((r) => setTimeout(r, 200));
   debug(`tone=${a} outcome=${await runFlow({ tone: a })}`);
 });
@@ -360,10 +367,10 @@ async function openSentencePopup(fix: SentenceFix) {
       kind: "diff", original: fix.original, corrected: fix.corrected, ops: diffWords(fix.original, fix.corrected),
       appName: auto.appName, notes: fix.notes.length ? fix.notes : undefined,
     }, await issueAnchor(it));
-    if (choice === "dismiss") return auto.resolveSentence(fix.start, fix.original.length, false);
+    if (choice === "dismiss") return auto.resolveSentence(fix.start, fix.original.length);
     const w = await helper.request("replace_range", { loc: fix.start, len: fix.original.length, text: fix.corrected, expect: fix.original, pid: auto.pid }, 5000);
-    debug(`auto popup write ok=${w.ok} err=${w.error ?? "-"}`);
-    auto.resolveSentence(fix.start, fix.original.length, w.ok);
+    debug(`auto popup write ok=${w.ok} method=${w.method ?? "-"} err=${w.error ?? "-"}`);
+    auto.resolveSentence(fix.start, fix.original.length, w.ok ? fix.corrected : undefined);
     if (w.ok) insights.record(fix.original, fix.corrected, fix.notes);
     else notify(w.error === "stale" ? "Text changed; fix skipped." : `Could not replace (${w.error}). Try the hotkey instead.`);
   } finally {
@@ -408,7 +415,7 @@ badge.onMenu = (bundleId) => {
       },
     },
     { type: "separator" },
-    { label: "Settings…", click: openSettings },
+    { label: "Settings…", click: () => void openPanel() },
   ]).popup();
 };
 
@@ -449,24 +456,12 @@ async function onHotkey2() {
 }
 
 // ---------- Settings window & IPC ----------
-function openSettings() {
-  if (settingsWin && !settingsWin.isDestroyed()) return settingsWin.show(), settingsWin.focus();
-  settingsWin = new BrowserWindow({
-    width: 560, height: 720, title: `${APP_NAME} Settings`, show: false,
-    webPreferences: { preload: join(root, "dist/preload.cjs"), sandbox: true, contextIsolation: true },
-  });
-  settingsWin.loadFile(join(root, "dist/renderer/settings.html"));
-  settingsWin.once("ready-to-show", () => { app.dock?.show(); settingsWin?.show(); });
-  settingsWin.on("closed", () => { settingsWin = null; app.dock?.hide(); });
-}
-
 async function settingsView(): Promise<SettingsView> {
   const [key, st] = await Promise.all([getApiKey(), helper.request<{ ok: boolean; trusted?: boolean }>("status")]);
   return { settings: store.get(), hasApiKey: !!key, axTrusted: !!st.trusted, insights: insights.top(10) };
 }
 
-ipcMain.handle("settings:get", settingsView);
-ipcMain.handle("settings:clearInsights", () => { insights.clear(); return settingsView(); });
+ipcMain.handle("settings:clearInsights", () => { insights.clear(); refreshTray(); return settingsView(); });
 ipcMain.handle("settings:save", async (_e, patch) => {
   const before = store.get().hotkey;
   const after = store.update(patch).hotkey;
@@ -476,6 +471,7 @@ ipcMain.handle("settings:save", async (_e, patch) => {
 });
 ipcMain.handle("settings:setKey", async (_e, key: string) => {
   await helper.request(key ? "keychain_set" : "keychain_delete", { service: KEY_SERVICE, account: KEY_ACCOUNT, value: key });
+  refreshTray();
   return settingsView();
 });
 ipcMain.handle("settings:test", async (_e, d: { endpoint: string; model: string; apiKey?: string }): Promise<TestResult> => {
@@ -489,7 +485,9 @@ ipcMain.handle("settings:test", async (_e, d: { endpoint: string; model: string;
   return r;
 });
 ipcMain.handle("settings:pickApp", async () => {
-  const r = await dialog.showOpenDialog({ defaultPath: "/Applications", properties: ["openFile"], filters: [{ name: "Applications", extensions: ["app"] }] });
+  trayPinned = true;
+  const r = await dialog.showOpenDialog({ defaultPath: "/Applications", properties: ["openFile"], filters: [{ name: "Applications", extensions: ["app"] }] })
+    .finally(() => { trayPinned = false; trayWin?.focus(); });
   if (r.canceled || !r.filePaths[0]) return null;
   return new Promise<string | null>((resolve) =>
     execFile("/usr/bin/mdls", ["-raw", "-name", "kMDItemCFBundleIdentifier", r.filePaths[0]], (err, out) =>
@@ -527,8 +525,8 @@ app.whenReady().then(async () => {
       detail:
         "1. Grant Accessibility permission when macOS asks (System Settings → Privacy & Security → Accessibility). Needed to read and replace text.\n" +
         `2. Select text and press ${hotkeyLabel()} to proofread. ⌥⌘T rewrites in a tone.\n` +
-        "3. Optional: Settings → Checking → Auto-check underlines mistakes as you type.\n\n" +
-        `Privacy: checked text is sent to ${store.get().endpoint} (change it in Settings). Password fields and excluded apps are never read. Text is never logged or stored.`,
+        "3. Click the ug icon in the menu bar for everything else: auto-check, tone, engine, dictionary.\n\n" +
+        `Privacy: checked text is sent to ${store.get().endpoint} (change it from the ug menu-bar panel). Password fields and excluded apps are never read. Text is never logged or stored.`,
       buttons: ["Get started"],
     });
     store.update({ firstRunAcknowledged: true });
@@ -541,4 +539,4 @@ app.whenReady().then(async () => {
 
 app.on("window-all-closed", () => {}); // menu-bar app: stay alive
 app.on("before-quit", () => { globalShortcut.unregisterAll(); helper.stop(); });
-app.on("second-instance", openSettings);
+app.on("second-instance", () => void openPanel());

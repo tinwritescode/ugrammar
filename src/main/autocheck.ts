@@ -114,17 +114,33 @@ export class AutoChecker {
     }
   }
 
-  /** Popup closed: accepted → the sentence was rewritten; dismissed → its fixes stay hidden. */
-  resolveSentence(start: number, length: number, accepted: boolean) {
+  /** Popup closed: `corrected` = the sentence was rewritten to it; omitted = dismissed, its fixes stay hidden. */
+  resolveSentence(start: number, length: number, corrected?: string) {
     const inside = this.issues.filter((i) => i.start >= start && i.end <= start + length);
     for (const it of inside) this.dismiss(it.id);
-    if (accepted) this.lastText = "";
+    if (corrected === undefined) return;
+    this.cacheClean(corrected, []); // the accepted text must not be sent back for another pass
+    this.lastText = "";
   }
 
   /** After a range was replaced: forget that issue and let the next tick re-anchor the rest. */
   applied(id: number) {
+    const it = this.issues.find((i) => i.id === id);
+    if (it) for (const [sentence, spans] of [...this.checked]) {
+      const sp = spans?.find((x) => x.original === it.original && x.replacement === it.replacement);
+      if (!sp) continue;
+      // The patched sentence keeps its other fixes, shifted, instead of a fresh request.
+      const delta = sp.replacement.length - sp.original.length;
+      const rest = spans!.filter((x) => x !== sp).map((x) => (x.start >= sp.end ? { ...x, start: x.start + delta, end: x.end + delta } : x));
+      this.cacheClean(sentence.slice(0, sp.start) + sp.replacement + sentence.slice(sp.end), rest);
+    }
     this.dismiss(id);
     this.lastText = "";
+  }
+
+  private cacheClean(sentence: string, spans: Omit<Issue, "id">[]) {
+    this.checked.set(sentence.trim(), spans); // sentenceEndingAt never includes edge whitespace
+    if (this.checked.size > MAX_CACHE) this.checked.delete(this.checked.keys().next().value!);
   }
 
   async tick() {

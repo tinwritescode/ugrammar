@@ -1,4 +1,4 @@
-// Marketing screenshot renderer: `bun run shots`. Renders the real popover/settings/badge renderer code
+// Marketing screenshot renderer: `bun run shots`. Renders the real popover/tray panel/badge renderer code
 // with sample data and saves dark-mode PNGs @2x to marketing/. No Accessibility or Screen Recording needed.
 import { app, BrowserWindow, ipcMain, nativeTheme } from "electron";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -29,7 +29,6 @@ const settingsView: SettingsView = {
   hasApiKey: false, axTrusted: true, insights: [{ from: "has", to: "have", count: 3, note: "has → have: subject-verb agreement" }],
 };
 
-ipcMain.handle("settings:get", () => settingsView);
 ipcMain.handle("settings:save", () => settingsView);
 ipcMain.handle("settings:setKey", () => settingsView);
 ipcMain.handle("settings:test", () => ({ ok: true, message: "Connected (llama3.1:8b)" }));
@@ -38,20 +37,20 @@ ipcMain.handle("settings:openAX", () => undefined);
 ipcMain.on("popover:action", () => {});
 const trayState: TrayState = {
   status: "idle", settings: { ...settingsView.settings, autoCheck: true, autoCheckMode: "popup" }, hotkey: "⌥⌘G",
-  insights: [{ from: "has", to: "have", count: 3 }, { from: "monday", to: "Monday", count: 2 }],
+  insights: [{ from: "has", to: "have", count: 3 }, { from: "monday", to: "Monday", count: 2 }], hasApiKey: false,
 };
 ipcMain.handle("tray:get", () => trayState);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const webPreferences = { preload: join(root, "dist/preload.cjs"), sandbox: true, contextIsolation: true, backgroundThrottling: false };
 
-async function shot(name: string, win: BrowserWindow) {
+async function shot(name: string, win: BrowserWindow, keep = false) {
   await sleep(500);
   const img = await win.webContents.capturePage();
   writeFileSync(join(out, name), img.toPNG());
   const { width, height } = img.getSize();
   console.log(`${name} ${width}x${height}`);
-  win.destroy();
+  if (!keep) win.destroy();
 }
 
 async function popover(name: string, p: PopoverPayload) {
@@ -69,17 +68,12 @@ app.whenReady().then(async () => {
   await popover("popover-loading.png", { kind: "loading", message: "Checking…" });
   await popover("popover-clean.png", { kind: "message", message: "No changes needed ✓" });
 
-  const settings = new BrowserWindow({ width: 560, height: 880, show: false, backgroundColor: "#1f2024", webPreferences });
-  await settings.loadFile(join(root, "dist/renderer/settings.html"));
-  await sleep(300);
-  const h = await settings.webContents.executeJavaScript("document.body.scrollHeight");
-  settings.setContentSize(560, h);
-  await shot("settings.png", settings);
-
-  const tray = new BrowserWindow({ width: 344, height: 640, show: false, frame: false, transparent: true, webPreferences });
-  ipcMain.on("tray:resize", (_e, h: number) => tray.isDestroyed() || tray.setSize(344, Math.ceil(h)));
+  const tray = new BrowserWindow({ width: 344, height: 2400, show: false, frame: false, transparent: true, webPreferences });
+  ipcMain.on("tray:resize", (_e, h: number) => tray.isDestroyed() || tray.setSize(344, Math.ceil(h))); // uncapped: the shot shows every section
   await tray.loadFile(join(root, "dist/renderer/tray.html"));
-  await shot("tray.png", tray);
+  await shot("tray.png", tray, true);
+  await tray.webContents.executeJavaScript(`document.getElementById("toSetup").click()`);
+  await shot("tray-setup.png", tray);
 
   const badge = new BrowserWindow({ width: 22, height: 22, show: false, frame: false, transparent: true, webPreferences });
   await badge.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(BADGE_PAGE));
