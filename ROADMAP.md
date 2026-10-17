@@ -30,7 +30,7 @@ Direction: Grammarly-like auto-check, underline in place + small card. Both pers
 - Learn from repeated mistakes: store counts locally; Settings → Insights shows top repeated errors with a short note.
 
 ## Distribution (parallel)
-- Rebuild + release v0.1.1 (showBadge off by default).
+- Rebuild + release v0.1.1 (showBadge off by default). - Release v0.1.2: Slack/contenteditable underlines, popup mode, loading pill.
 - Onboarding for Accessibility (+ Input Monitoring if CGEventTap).
 - Notarization + auto-update (needs Apple Developer ID).
 - Site: 1200×630 og image, refresh screenshots after Phase 2.
