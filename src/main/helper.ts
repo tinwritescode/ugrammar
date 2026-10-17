@@ -22,6 +22,7 @@ export class HelperClient {
   private pending = new Map<number, { resolve: (r: HelperReply) => void; timer: ReturnType<typeof setTimeout> }>();
   private stopped = false;
   onHotkey: () => void = () => {};
+  onHotkey2: () => void = () => {};
   onRestart: () => void = () => {};
 
   constructor(private path: string) {}
@@ -54,6 +55,7 @@ export class HelperClient {
     let msg: HelperReply & { id?: number; event?: string };
     try { msg = JSON.parse(line); } catch { return; }
     if (msg.event === "hotkey") return this.onHotkey();
+    if (msg.event === "hotkey2") return this.onHotkey2();
     if (typeof msg.id === "number") {
       const w = this.pending.get(msg.id);
       if (w) { clearTimeout(w.timer); this.pending.delete(msg.id); w.resolve(msg); }

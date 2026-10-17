@@ -52,3 +52,11 @@ Automated: `bun test` (engine, diff, settings, flow) and `bun run typecheck`.
 ## Explanations and badge menu
 - [ ] Diff popover lists a short Vietnamese reason per fix under the text (setting `explain` in settings.json; set false for ~1.5s faster checks).
 - [ ] Right-click the badge: "Ẩn ở app này" adds the app to the exclusion list; "Tạm dừng 1 giờ" pauses and auto-resumes.
+
+## Auto-check, quick fix, tone (manual)
+- Settings → Checking → enable "Auto-check". In Notes/TextEdit type `She dont like it.` and wait ~1s: a red underline appears under the error; click it → small card → Accept replaces only that word.
+- Edit the sentence after the underline appears: the underline follows or disappears; Accept on a changed word reports "Text changed".
+- Enable "Hotkey fixes at once": ⌥⌘G replaces directly; ⌘Z restores.
+- ⌥⌘T on a selection → menu Formal/Friendly/Short → diff popover.
+- Fix the same mistake twice → Settings → Insights lists it.
+- Chrome/Electron fields: AX range bounds may be missing; then no underline (use the hotkey).

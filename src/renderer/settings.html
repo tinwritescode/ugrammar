@@ -17,6 +17,14 @@
   <label class="check"><input type="checkbox" id="showBadge"> Show a small badge next to the text field after typing or selecting</label>
 </section>
 
+<section><h2>Checking</h2>
+  <label class="check"><input type="checkbox" id="autoCheck"> Auto-check each sentence when you finish it (. ? ! Enter); underline issues in place</label>
+  <label class="check"><input type="checkbox" id="quickFix"> Hotkey fixes at once, no preview (⌘Z undoes)</label>
+  <label class="check"><input type="checkbox" id="explain"> Explain each fix</label>
+  <label>Explanation language<select id="explainLang"></select></label>
+  <p class="mut">Tone menu (Formal / Friendly / Short) on the selection: ⌥⌘T.</p>
+</section>
+
 <section><h2>Hotkey</h2>
   <div class="row" id="mods"></div>
   <label>Key<select id="hkKey"></select></label>
@@ -32,6 +40,12 @@
   <p class="mut">Text in these apps is never read or sent. Bundle IDs.</p>
   <div class="row"><input id="newApp" placeholder="com.example.app"><button id="addApp">Add</button><button id="pickApp">Choose app…</button></div>
   <ul id="apps"></ul>
+</section>
+
+<section><h2>Insights</h2>
+  <p class="mut">Mistakes you accepted fixes for at least twice. Stored only on this Mac.</p>
+  <ul id="insights"></ul>
+  <div class="row"><button id="clearInsights">Clear</button></div>
 </section>
 
 <div class="row foot"><button class="primary" id="save">Save</button><span id="saved"></span></div>

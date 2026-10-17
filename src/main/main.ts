@@ -9,6 +9,11 @@ import { FixFlow, type Status } from "./flow";
 import { HelperClient, type SelectionReply } from "./helper";
 import { SettingsStore } from "./settings";
 import { TypingBadge } from "./badge";
+import { AutoChecker, type Issue, type Snapshot } from "./autocheck";
+import { UnderlineOverlay } from "./underline";
+import { InsightStore } from "./insights";
+import { diffWords } from "../shared/diff";
+import type { Tone } from "./engine/types";
 import type { PopoverPayload, SettingsView, TestResult } from "../shared/ipc";
 
 const APP_NAME = "ugrammar";
@@ -30,6 +35,7 @@ const legacyDir = join(app.getPath("appData"), "Proofy");
 if (!existsSync(settingsDir) && existsSync(legacyDir)) cpSync(legacyDir, settingsDir, { recursive: true });
 const store = new SettingsStore(settingsDir);
 const helper = new HelperClient(helperPath);
+const insights = new InsightStore(settingsDir);
 
 let tray: Tray | null = null;
 let status: Status = { kind: "idle" };
@@ -120,33 +126,40 @@ function ensurePopover(): BrowserWindow {
   return popover;
 }
 
-let popoverAnchor: { x: number; y: number } | null = null;
+/** `y` = top edge when placed below, `altY` = bottom edge when placed above. */
+interface Anchor { x: number; y: number; altY: number }
+let popoverAnchor: Anchor | null = null;
+
+function cursorAnchor(): Anchor {
+  const pt = screen.getCursorScreenPoint();
+  return { x: pt.x, y: pt.y + 20, altY: pt.y - 36 };
+}
 
 /** Below the anchor if it fits, else above it; always clamped inside the display. Re-run after each resize. */
-function placePopover(win: BrowserWindow, fresh = false) {
-  if (fresh || !popoverAnchor) popoverAnchor = screen.getCursorScreenPoint();
-  const pt = popoverAnchor;
-  const area = screen.getDisplayNearestPoint(pt).workArea;
+function placePopover(win: BrowserWindow, fresh?: Anchor | true) {
+  if (fresh) popoverAnchor = fresh === true ? cursorAnchor() : fresh;
+  else if (!popoverAnchor) popoverAnchor = cursorAnchor();
+  const a = popoverAnchor;
+  const area = screen.getDisplayNearestPoint({ x: a.x, y: a.y }).workArea;
   const [w, h] = win.getSize();
-  const x = Math.min(Math.max(pt.x - w / 2, area.x + 8), area.x + area.width - w - 8);
-  const below = pt.y + 20;
-  const y = below + h <= area.y + area.height - 8 ? below : pt.y - 36 - h;
+  const x = Math.min(Math.max(a.x - w / 2, area.x + 8), area.x + area.width - w - 8);
+  const y = a.y + h <= area.y + area.height - 8 ? a.y : a.altY - h;
   win.setPosition(Math.round(x), Math.round(Math.min(Math.max(y, area.y + 8), area.y + area.height - h - 8)));
 }
 
-async function showPopover(p: PopoverPayload) {
+async function showPopover(p: PopoverPayload, anchor?: Anchor) {
   const win = ensurePopover();
   if (win.webContents.isLoading()) await new Promise<void>((r) => win.webContents.once("did-finish-load", () => r()));
   win.webContents.send("popover:show", p);
-  placePopover(win, true);
+  placePopover(win, anchor ?? true);
   win.showInactive(); // keep the target app focused so write-back lands there
 }
 
-function showDiff(p: PopoverPayload): Promise<"accept" | "dismiss"> {
+function showDiff(p: PopoverPayload, anchor?: Anchor): Promise<"accept" | "dismiss"> {
   closePopover();
   return new Promise((resolve) => {
     popoverResolve = resolve;
-    void showPopover(p);
+    void showPopover(p, anchor);
     globalShortcut.register("CommandOrControl+Return", () => closePopover("accept"));
     globalShortcut.register("Escape", () => closePopover("dismiss"));
   });
@@ -194,7 +207,42 @@ const flow = new FixFlow({
   showMessage,
   showLoading,
   hideLoading: () => closePopover(),
+  onApplied: (o, c, n) => insights.record(o, c, n),
 });
+
+// ---------- Auto-check (underline in place + small card) ----------
+let cardOpen = false;
+const underlines = new UnderlineOverlay(root, (id) => void openIssueCard(id));
+const auto = new AutoChecker({
+  settings: () => store.get(),
+  snapshot: (excluded, ranges) => helper.request<Snapshot>("snapshot", { excluded, ranges }, 3000),
+  makeEngine,
+  onMarks: (marks) => (cardOpen ? undefined : underlines.set(marks)),
+});
+
+async function openIssueCard(id: number) {
+  const it: Issue | undefined = auto.issues.find((i) => i.id === id);
+  if (!it || cardOpen) return;
+  cardOpen = true;
+  try {
+    const marks = underlines.bounds(id);
+    const anchor = marks ? { x: marks.x + marks.w / 2, y: marks.y + marks.h + 6, altY: marks.y - 6 } : undefined;
+    const ops = diffWords(it.original, it.replacement);
+    const choice = await showDiff({
+      kind: "diff", original: it.original, corrected: it.replacement, ops, appName: auto.appName,
+      notes: it.reason ? [it.reason] : undefined,
+    }, anchor);
+    if (choice === "dismiss") return auto.dismiss(id);
+    const w = await helper.request("replace_range", { loc: it.start, len: it.end - it.start, text: it.replacement, expect: it.original, pid: auto.pid }, 5000);
+    if (w.ok) { insights.record(it.original, it.replacement, it.reason ? [it.reason] : []); auto.applied(id); }
+    else {
+      auto.dismiss(id);
+      notify(w.error === "stale" ? "Text changed; fix skipped." : `Could not replace (${w.error}). Try the hotkey instead.`);
+    }
+  } finally {
+    cardOpen = false;
+  }
+}
 
 let resumeTimer: NodeJS.Timeout | null = null;
 
@@ -232,6 +280,22 @@ async function registerHotkey() {
   const { key, mods } = store.get().hotkey;
   const r = await helper.request("set_hotkey", { key, mods });
   if (!r.ok) notify(`Could not register hotkey (${r.error}). It may be in use by another app.`);
+  // Tone menu: fixed ⌥⌘T. Failure (key in use) is not fatal.
+  await helper.request("set_hotkey", { key: "T", mods: ["alt", "cmd"], slot: 2 });
+}
+
+/** Tone hotkey: remember the target app, then pick Formal / Friendly / Short from a menu. */
+async function onHotkey2() {
+  closePopover();
+  const pick = (tone: Tone) => async () => {
+    debug(`tone=${tone} outcome=${await flow.run({ tone })}`);
+  };
+  Menu.buildFromTemplate([
+    { label: "Rewrite selection as…", enabled: false },
+    { label: "Formal", click: pick("formal") },
+    { label: "Friendly", click: pick("friendly") },
+    { label: "Short", click: pick("short") },
+  ]).popup();
 }
 
 // ---------- Settings window & IPC ----------
@@ -248,10 +312,11 @@ function openSettings() {
 
 async function settingsView(): Promise<SettingsView> {
   const [key, st] = await Promise.all([getApiKey(), helper.request<{ ok: boolean; trusted?: boolean }>("status")]);
-  return { settings: store.get(), hasApiKey: !!key, axTrusted: !!st.trusted };
+  return { settings: store.get(), hasApiKey: !!key, axTrusted: !!st.trusted, insights: insights.top(10) };
 }
 
 ipcMain.handle("settings:get", settingsView);
+ipcMain.handle("settings:clearInsights", () => { insights.clear(); return settingsView(); });
 ipcMain.handle("settings:save", async (_e, patch) => {
   const before = store.get().hotkey;
   const after = store.update(patch).hotkey;
@@ -290,9 +355,14 @@ app.whenReady().then(async () => {
   app.dock?.hide();
   tray = new Tray(nativeImage.createEmpty());
   helper.onHotkey = () => void onHotkey();
+  helper.onHotkey2 = () => void onHotkey2();
   helper.onRestart = () => void registerHotkey();
   helper.start();
-  store.onChange(() => setStatus(status.kind === "paused" || status.kind === "idle" ? { kind: "idle" } : status));
+  store.onChange((cfg) => {
+    setStatus(status.kind === "paused" || status.kind === "idle" ? { kind: "idle" } : status);
+    if (cfg.autoCheck && !cfg.paused) auto.start(); else auto.stop();
+  });
+  if (store.get().autoCheck) auto.start();
   setStatus({ kind: "idle" });
 
   const st = await helper.request<{ ok: boolean; trusted?: boolean }>("status");

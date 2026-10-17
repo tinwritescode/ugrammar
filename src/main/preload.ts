@@ -5,6 +5,8 @@ const api: ProofyApi = {
   onPopover: (cb) => ipcRenderer.on("popover:show", (_e, p) => cb(p)),
   popoverAction: (a) => ipcRenderer.send("popover:action", a),
   badgeMenu: () => ipcRenderer.send("badge:menu"),
+  underlineClick: () => ipcRenderer.send("underline:click"),
+  clearInsights: () => ipcRenderer.invoke("settings:clearInsights"),
   badgeClick: () => ipcRenderer.send("badge:click"),
   popoverResize: (h) => ipcRenderer.send("popover:resize", h),
   getSettings: () => ipcRenderer.invoke("settings:get"),

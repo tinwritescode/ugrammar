@@ -52,12 +52,28 @@ function load(v: SettingsView) {
   dictionary = [...s.dictionary];
   excluded = [...s.excludedApps];
   $<HTMLInputElement>("showBadge").checked = s.showBadge;
+  $<HTMLInputElement>("autoCheck").checked = s.autoCheck;
+  $<HTMLInputElement>("quickFix").checked = s.quickFix;
+  $<HTMLInputElement>("explain").checked = s.explain;
+  if (![...langSel.options].some((o) => o.value === s.explainLang)) langSel.add(new Option(s.explainLang, s.explainLang));
+  langSel.value = s.explainLang;
+  $("insights").replaceChildren(...(v.insights.length ? v.insights : []).map((i) => {
+    const li = document.createElement("li");
+    const span = document.createElement("span");
+    span.textContent = `${i.count}× ${i.note ?? `${i.from} → ${i.to}`}`;
+    li.append(span);
+    return li;
+  }));
+  if (!v.insights.length) { const li = document.createElement("li"); li.textContent = "Nothing repeated yet."; $("insights").append(li); }
   mods = new Set(s.hotkey.mods);
   $<HTMLSelectElement>("hkKey").value = s.hotkey.key;
   renderMods();
   renderLists();
 }
 
+const langSel = $<HTMLSelectElement>("explainLang");
+for (const l of ["Vietnamese", "English", "Spanish", "French", "German", "Portuguese", "Japanese", "Korean", "Chinese"]) langSel.add(new Option(l, l));
+$("clearInsights").onclick = async () => load(await proofy.clearInsights());
 const sel = $<HTMLSelectElement>("hkKey");
 for (const c of "ABCDEFGHIJKLMNOPQRSTUVWXYZ") sel.add(new Option(c, c));
 
@@ -97,6 +113,10 @@ $("save").onclick = async () => {
     endpoint: $<HTMLInputElement>("endpoint").value,
     model: $<HTMLInputElement>("model").value,
     showBadge: $<HTMLInputElement>("showBadge").checked,
+    autoCheck: $<HTMLInputElement>("autoCheck").checked,
+    quickFix: $<HTMLInputElement>("quickFix").checked,
+    explain: $<HTMLInputElement>("explain").checked,
+    explainLang: langSel.value,
     dictionary,
     excludedApps: excluded,
   };

@@ -26,7 +26,7 @@ const diff: PopoverPayload = {
 };
 const settingsView: SettingsView = {
   settings: { ...DEFAULT_SETTINGS, endpoint: "http://localhost:11434/v1", model: "llama3.1:8b", dictionary: ["Xpiki", "Vercel", "Supabase"] },
-  hasApiKey: false, axTrusted: true,
+  hasApiKey: false, axTrusted: true, insights: [{ from: "has", to: "have", count: 3, note: "has → have: subject-verb agreement" }],
 };
 
 ipcMain.handle("settings:get", () => settingsView);
