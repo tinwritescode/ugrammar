@@ -3,3 +3,4 @@ dist
 helper/.build
 *.log
 .DS_Store
+release

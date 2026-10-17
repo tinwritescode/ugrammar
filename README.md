@@ -11,3 +11,11 @@ Menu-bar grammar fixer for macOS. Select text anywhere, press ⌥⌘G, review th
 Layout: `src/main` (Electron main, engine, settings, flow), `src/renderer` (popover, settings UI), `helper/` (Swift: hotkey, AX, clipboard, Keychain; JSON lines over stdio).
 
 Not in MVP: live check, inline underline, tones, Vietnamese, notarization.
+
+## Build the app
+
+```bash
+bun run package   # -> release/ugrammar-darwin-arm64/ugrammar.app (arm64, ad-hoc signed)
+```
+
+Ad-hoc signed, not notarized: first open via right-click → Open, then grant Accessibility to ugrammar.

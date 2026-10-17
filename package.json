@@ -12,9 +12,11 @@
     "start": "electron .",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "postinstall": "node node_modules/electron/install.js"
+    "postinstall": "node node_modules/electron/install.js",
+    "package": "bun run helper && bun run build && electron-packager . ugrammar --platform=darwin --arch=arm64 --out=release --overwrite --prune=true --ignore='^/(helper|marketing|scripts|src|tests|release|\\.git)' --ignore='\\.md$' --extra-resource=helper/.build/release/grammar-helper --app-bundle-id=dev.ugrammar.app --osx-sign.identity=-"
   },
   "devDependencies": {
+    "@electron/packager": "^20.3.0",
     "@types/bun": "^1.4.3",
     "electron": "^44.8.0",
     "typescript": "^7.0.2"
