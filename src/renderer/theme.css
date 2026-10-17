@@ -1,0 +1,42 @@
+/* Tokens mirrored from the CapMoney design system: charcoal surfaces, one accent, flat cards, pill buttons. */
+:root {
+  color-scheme: dark light;
+  --background: oklch(0.17 0.006 260); --surface: oklch(0.22 0.008 260); --surface-2: oklch(0.27 0.01 260);
+  --foreground: oklch(0.97 0 0); --muted: oklch(0.68 0 0);
+  --primary: oklch(0.66 0.17 252); --primary-fg: oklch(0.98 0 0);
+  --accent: oklch(0.3 0.05 252);
+  --expense: oklch(0.68 0.19 22); --income: oklch(0.76 0.17 150);
+  --expense-bg: oklch(0.68 0.19 22 / .16); --income-bg: oklch(0.76 0.17 150 / .16);
+  --destructive: oklch(0.64 0.2 25);
+  --border: rgba(255,255,255,.08); --input: rgba(255,255,255,.12);
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --background: oklch(0.97 0.004 260); --surface: oklch(1 0 0); --surface-2: oklch(0.94 0.006 260);
+    --foreground: oklch(0.2 0 0); --muted: oklch(0.48 0 0);
+    --accent: oklch(0.93 0.04 252);
+    --expense: oklch(0.58 0.2 25); --income: oklch(0.55 0.15 150);
+    --expense-bg: oklch(0.58 0.2 25 / .12); --income-bg: oklch(0.55 0.15 150 / .14);
+    --border: rgba(0,0,0,.09); --input: rgba(0,0,0,.14);
+  }
+}
+html, body { font: 13px/1.5 "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif; color: var(--foreground); font-feature-settings: "tnum"; }
+button {
+  font: inherit; font-weight: 600; height: 34px; padding: 0 16px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--foreground);
+  transition: transform .15s, filter .15s; -webkit-app-region: no-drag;
+}
+button:hover { filter: brightness(1.1); }
+button:active { transform: scale(.96) translateY(1px); }
+button.primary {
+  border-color: transparent; color: var(--primary-fg);
+  background: linear-gradient(to bottom, var(--primary), color-mix(in oklab, var(--primary) 86%, black));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.25), inset 0 -2px 0 rgba(0,0,0,.18);
+}
+button:disabled { opacity: .5; pointer-events: none; }
+input, select {
+  font: inherit; height: 36px; padding: 0 12px; border-radius: 14px; border: 1px solid var(--input);
+  background: var(--surface-2); color: var(--foreground); outline: none;
+}
+input:focus-visible, select:focus-visible { border-color: var(--primary); }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }

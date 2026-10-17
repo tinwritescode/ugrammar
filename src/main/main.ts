@@ -115,20 +115,25 @@ function ensurePopover(): BrowserWindow {
   return popover;
 }
 
-function placePopover(win: BrowserWindow) {
-  const pt = screen.getCursorScreenPoint();
+let popoverAnchor: { x: number; y: number } | null = null;
+
+/** Below the anchor if it fits, else above it; always clamped inside the display. Re-run after each resize. */
+function placePopover(win: BrowserWindow, fresh = false) {
+  if (fresh || !popoverAnchor) popoverAnchor = screen.getCursorScreenPoint();
+  const pt = popoverAnchor;
   const area = screen.getDisplayNearestPoint(pt).workArea;
   const [w, h] = win.getSize();
   const x = Math.min(Math.max(pt.x - w / 2, area.x + 8), area.x + area.width - w - 8);
-  const y = Math.min(Math.max(pt.y + 20, area.y + 8), area.y + area.height - h - 8);
-  win.setPosition(Math.round(x), Math.round(y));
+  const below = pt.y + 20;
+  const y = below + h <= area.y + area.height - 8 ? below : pt.y - 36 - h;
+  win.setPosition(Math.round(x), Math.round(Math.min(Math.max(y, area.y + 8), area.y + area.height - h - 8)));
 }
 
 async function showPopover(p: PopoverPayload) {
   const win = ensurePopover();
   if (win.webContents.isLoading()) await new Promise<void>((r) => win.webContents.once("did-finish-load", () => r()));
   win.webContents.send("popover:show", p);
-  placePopover(win);
+  placePopover(win, true);
   win.showInactive(); // keep the target app focused so write-back lands there
 }
 
@@ -157,6 +162,7 @@ ipcMain.on("popover:action", (_e, a: "accept" | "dismiss") => closePopover(a));
 ipcMain.on("popover:resize", (_e, h: number) => {
   if (popover && !popover.isDestroyed() && h > 0) {
     popover.setSize(460, Math.min(Math.ceil(h), 600));
+    placePopover(popover);
   }
 });
 
