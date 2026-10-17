@@ -83,7 +83,7 @@ const badge = new TypingBadge(root, () => void onBadgeClick(), async () => {
 function setStatus(s: Status) {
   status = s.kind === "idle" && store.get().paused ? { kind: "paused" } : s;
   refreshTray();
-  if (status.kind === "paused" || status.kind === "needs_permission") badge.stop();
+  if (status.kind === "paused" || status.kind === "needs_permission" || !store.get().showBadge) badge.stop();
   else { badge.start(); badge.setState(status.kind === "checking" ? "checking" : "idle"); }
 }
 

@@ -51,6 +51,7 @@ function load(v: SettingsView) {
   $("perm").hidden = v.axTrusted;
   dictionary = [...s.dictionary];
   excluded = [...s.excludedApps];
+  $<HTMLInputElement>("showBadge").checked = s.showBadge;
   mods = new Set(s.hotkey.mods);
   $<HTMLSelectElement>("hkKey").value = s.hotkey.key;
   renderMods();
@@ -95,6 +96,7 @@ $("save").onclick = async () => {
   const patch: Partial<Settings> = {
     endpoint: $<HTMLInputElement>("endpoint").value,
     model: $<HTMLInputElement>("model").value,
+    showBadge: $<HTMLInputElement>("showBadge").checked,
     dictionary,
     excludedApps: excluded,
   };

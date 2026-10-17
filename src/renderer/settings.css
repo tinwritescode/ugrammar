@@ -18,3 +18,5 @@ p.mut, .mut { color: var(--muted); margin: 0 0 6px; }
 .foot { margin-top: 16px; }
 #mods label { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--foreground); font-size: 13px; }
 #mods input { width: auto; height: auto; margin: 0; display: inline-block; }
+label.check { display: flex; align-items: center; gap: 8px; color: var(--foreground); font-size: 13px; font-weight: 500; }
+label.check input { width: auto; margin: 0; }

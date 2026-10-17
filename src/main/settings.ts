@@ -15,6 +15,7 @@ export interface Settings {
   hotkey: Hotkey;
   paused: boolean;
   explain: boolean; // short Vietnamese reason per fix (slower)
+  showBadge: boolean; // floating badge next to the typing caret (off by default: distracting)
   firstRunAcknowledged: boolean;
 }
 
@@ -37,6 +38,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hotkey: { key: "G", mods: ["alt", "cmd"] },
   paused: false,
   explain: true,
+  showBadge: false,
   firstRunAcknowledged: false,
 };
 
@@ -72,6 +74,7 @@ export function normalizeSettings(raw: unknown): Settings {
     hotkey: hotkeyOk ? { key: hk!.key!.toUpperCase(), mods: [...hk!.mods!] as Hotkey["mods"] } : { ...d.hotkey, mods: [...d.hotkey.mods] },
     paused: r.paused === true,
     explain: r.explain !== false,
+    showBadge: r.showBadge === true,
     firstRunAcknowledged: r.firstRunAcknowledged === true,
   };
 }

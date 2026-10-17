@@ -76,4 +76,10 @@ describe("normalizeSettings", () => {
   test("invalid hotkey falls back", () => {
     expect(normalizeSettings({ hotkey: { key: "??", mods: [] } }).hotkey).toEqual(DEFAULT_SETTINGS.hotkey);
   });
+  test("showBadge defaults off, only true enables", () => {
+    expect(DEFAULT_SETTINGS.showBadge).toBe(false);
+    expect(normalizeSettings({}).showBadge).toBe(false);
+    expect(normalizeSettings({ showBadge: "yes" }).showBadge).toBe(false);
+    expect(normalizeSettings({ showBadge: true }).showBadge).toBe(true);
+  });
 });
