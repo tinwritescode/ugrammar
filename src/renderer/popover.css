@@ -1,0 +1,12 @@
+:root { color-scheme: light dark; --bg: rgba(250,250,252,.96); --fg: #1d1d1f; --mut: #6e6e73; --add: #d7f5dd; --addf:#0a6b22; --del:#fddcdc; --delf:#a4161a; --line: rgba(0,0,0,.12); }
+@media (prefers-color-scheme: dark) { :root { --bg: rgba(40,40,44,.96); --fg:#f5f5f7; --mut:#a1a1a6; --add:#17462a; --addf:#7ee79b; --del:#55201f; --delf:#ff9a97; --line: rgba(255,255,255,.14); } }
+html, body { margin: 0; background: transparent; font: 13px/1.5 -apple-system, BlinkMacSystemFont, sans-serif; color: var(--fg); user-select: none; }
+#card { margin: 6px; padding: 12px 14px; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; -webkit-app-region: drag; }
+.text { white-space: pre-wrap; word-break: break-word; max-height: 380px; overflow: auto; -webkit-app-region: no-drag; user-select: text; }
+ins { background: var(--add); color: var(--addf); text-decoration: none; border-radius: 3px; padding: 0 1px; }
+del { background: var(--del); color: var(--delf); border-radius: 3px; padding: 0 1px; }
+.bar { display: flex; gap: 8px; align-items: center; margin-top: 10px; -webkit-app-region: no-drag; }
+.hint { flex: 1; color: var(--mut); font-size: 11px; }
+button { font: inherit; padding: 4px 14px; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--fg); cursor: pointer; }
+button.primary { background: #0a84ff; border-color: #0a84ff; color: #fff; }
+.msg { text-align: center; padding: 2px 0; }

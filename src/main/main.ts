@@ -1,0 +1,257 @@
+import {
+  app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, screen, shell, Tray,
+} from "electron";
+import { execFile } from "node:child_process";
+import { join } from "node:path";
+import { OpenAICompatibleEngine } from "./engine/openai";
+import { FixFlow, type Status } from "./flow";
+import { HelperClient, type SelectionReply } from "./helper";
+import { SettingsStore } from "./settings";
+import type { PopoverPayload, SettingsView, TestResult } from "../shared/ipc";
+
+const APP_NAME = "Proofy";
+const KEY_SERVICE = "Proofy";
+const KEY_ACCOUNT = "api-key";
+
+app.setName(APP_NAME);
+if (!app.requestSingleInstanceLock()) app.quit();
+
+const root = join(import.meta.dirname, "..");
+const helperPath = app.isPackaged
+  ? join(process.resourcesPath, "grammar-helper")
+  : join(root, "helper/.build/release/grammar-helper");
+
+const store = new SettingsStore(join(app.getPath("appData"), APP_NAME));
+const helper = new HelperClient(helperPath);
+
+let tray: Tray | null = null;
+let status: Status = { kind: "idle" };
+let popover: BrowserWindow | null = null;
+let settingsWin: BrowserWindow | null = null;
+let popoverResolve: ((c: "accept" | "dismiss") => void) | null = null;
+let messageTimer: ReturnType<typeof setTimeout> | null = null;
+
+// ---------- Keychain ----------
+async function getApiKey(): Promise<string | null> {
+  const r = await helper.request<{ ok: boolean; value?: string | null }>("keychain_get", { service: KEY_SERVICE, account: KEY_ACCOUNT });
+  return r.ok ? (r.value ?? null) : null;
+}
+
+async function makeEngine() {
+  const s = store.get();
+  return new OpenAICompatibleEngine({ endpoint: s.endpoint, model: s.model, timeoutMs: s.timeoutMs }, { apiKey: await getApiKey() });
+}
+
+// ---------- Tray ----------
+const STATUS_LABEL: Record<Status["kind"], string> = {
+  idle: "Ready", checking: "Checking…", paused: "Paused", error: "Error", needs_permission: "Needs Accessibility permission",
+};
+const STATUS_TITLE: Record<Status["kind"], string> = { idle: "Pf", checking: "Pf…", paused: "Pf⏸", error: "Pf!", needs_permission: "Pf?" };
+
+function refreshTray() {
+  if (!tray) return;
+  const s = store.get();
+  tray.setTitle(STATUS_TITLE[status.kind]);
+  const hk = `${s.hotkey.mods.map((m) => ({ cmd: "⌘", alt: "⌥", ctrl: "⌃", shift: "⇧" })[m]).join("")}${s.hotkey.key}`;
+  tray.setToolTip(`${APP_NAME} — ${STATUS_LABEL[status.kind]}`);
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: `Status: ${STATUS_LABEL[status.kind]}${status.message ? ` — ${status.message}` : ""}`, enabled: false },
+    { label: `Fix selection: ${hk}`, enabled: false },
+    { type: "separator" },
+    { label: "Pause", type: "checkbox", checked: s.paused, click: (i) => store.update({ paused: i.checked }) },
+    ...(status.kind === "needs_permission"
+      ? [{ label: "Open Accessibility Settings…", click: openAXSettings }]
+      : []),
+    { label: "Settings…", accelerator: "Cmd+,", click: openSettings },
+    { type: "separator" },
+    { label: `Quit ${APP_NAME}`, accelerator: "Cmd+Q", click: () => app.quit() },
+  ]));
+}
+
+function setStatus(s: Status) {
+  status = s.kind === "idle" && store.get().paused ? { kind: "paused" } : s;
+  refreshTray();
+}
+
+function notify(body: string) {
+  if (Notification.isSupported()) new Notification({ title: APP_NAME, body }).show();
+}
+
+function openAXSettings() {
+  shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility");
+}
+
+// ---------- Popover ----------
+function closePopover(choice: "accept" | "dismiss" = "dismiss") {
+  if (messageTimer) clearTimeout(messageTimer);
+  messageTimer = null;
+  globalShortcut.unregister("CommandOrControl+Return");
+  globalShortcut.unregister("Escape");
+  if (popover && !popover.isDestroyed()) popover.hide();
+  const r = popoverResolve;
+  popoverResolve = null;
+  r?.(choice);
+}
+
+function ensurePopover(): BrowserWindow {
+  if (popover && !popover.isDestroyed()) return popover;
+  popover = new BrowserWindow({
+    width: 460, height: 200, show: false, frame: false, resizable: false, movable: true,
+    alwaysOnTop: true, skipTaskbar: true, hasShadow: true, transparent: true, type: "panel",
+    webPreferences: { preload: join(root, "dist/preload.cjs"), sandbox: true, contextIsolation: true },
+  });
+  popover.setAlwaysOnTop(true, "screen-saver");
+  popover.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  popover.loadFile(join(root, "dist/renderer/popover.html"));
+  return popover;
+}
+
+function placePopover(win: BrowserWindow) {
+  const pt = screen.getCursorScreenPoint();
+  const area = screen.getDisplayNearestPoint(pt).workArea;
+  const [w, h] = win.getSize();
+  const x = Math.min(Math.max(pt.x - w / 2, area.x + 8), area.x + area.width - w - 8);
+  const y = Math.min(Math.max(pt.y + 20, area.y + 8), area.y + area.height - h - 8);
+  win.setPosition(Math.round(x), Math.round(y));
+}
+
+async function showPopover(p: PopoverPayload) {
+  const win = ensurePopover();
+  if (win.webContents.isLoading()) await new Promise<void>((r) => win.webContents.once("did-finish-load", () => r()));
+  win.webContents.send("popover:show", p);
+  placePopover(win);
+  win.showInactive(); // keep the target app focused so write-back lands there
+}
+
+function showDiff(p: PopoverPayload): Promise<"accept" | "dismiss"> {
+  closePopover();
+  return new Promise((resolve) => {
+    popoverResolve = resolve;
+    void showPopover(p);
+    globalShortcut.register("CommandOrControl+Return", () => closePopover("accept"));
+    globalShortcut.register("Escape", () => closePopover("dismiss"));
+  });
+}
+
+function showMessage(message: string) {
+  closePopover();
+  void showPopover({ kind: "message", message });
+  messageTimer = setTimeout(() => closePopover(), 2200);
+}
+
+ipcMain.on("popover:action", (_e, a: "accept" | "dismiss") => closePopover(a));
+ipcMain.on("popover:resize", (_e, h: number) => {
+  if (popover && !popover.isDestroyed() && h > 0) {
+    popover.setSize(460, Math.min(Math.ceil(h), 600));
+  }
+});
+
+// ---------- Flow ----------
+const flow = new FixFlow({
+  settings: () => store.get(),
+  readSelection: (excluded) => helper.request<SelectionReply>("read", { excluded }, 8000),
+  writeSelection: (text, pid, method) => helper.request("write", { text, pid, method }, 8000),
+  makeEngine,
+  setStatus,
+  notify,
+  showDiff,
+  showMessage,
+});
+
+async function onHotkey() {
+  closePopover(); // a still-open popover counts as dismissed
+  await new Promise((r) => setTimeout(r, 0));
+  await flow.run();
+}
+
+async function registerHotkey() {
+  const { key, mods } = store.get().hotkey;
+  const r = await helper.request("set_hotkey", { key, mods });
+  if (!r.ok) notify(`Could not register hotkey (${r.error}). It may be in use by another app.`);
+}
+
+// ---------- Settings window & IPC ----------
+function openSettings() {
+  if (settingsWin && !settingsWin.isDestroyed()) return settingsWin.show(), settingsWin.focus();
+  settingsWin = new BrowserWindow({
+    width: 560, height: 720, title: `${APP_NAME} Settings`, show: false,
+    webPreferences: { preload: join(root, "dist/preload.cjs"), sandbox: true, contextIsolation: true },
+  });
+  settingsWin.loadFile(join(root, "dist/renderer/settings.html"));
+  settingsWin.once("ready-to-show", () => { app.dock?.show(); settingsWin?.show(); });
+  settingsWin.on("closed", () => { settingsWin = null; app.dock?.hide(); });
+}
+
+async function settingsView(): Promise<SettingsView> {
+  const [key, st] = await Promise.all([getApiKey(), helper.request<{ ok: boolean; trusted?: boolean }>("status")]);
+  return { settings: store.get(), hasApiKey: !!key, axTrusted: !!st.trusted };
+}
+
+ipcMain.handle("settings:get", settingsView);
+ipcMain.handle("settings:save", async (_e, patch) => {
+  const before = store.get().hotkey;
+  const after = store.update(patch).hotkey;
+  if (JSON.stringify(before) !== JSON.stringify(after)) await registerHotkey();
+  refreshTray();
+  return settingsView();
+});
+ipcMain.handle("settings:setKey", async (_e, key: string) => {
+  await helper.request(key ? "keychain_set" : "keychain_delete", { service: KEY_SERVICE, account: KEY_ACCOUNT, value: key });
+  return settingsView();
+});
+ipcMain.handle("settings:test", async (_e, d: { endpoint: string; model: string; apiKey?: string }): Promise<TestResult> => {
+  const apiKey = d.apiKey || (await getApiKey());
+  const engine = new OpenAICompatibleEngine(
+    { endpoint: d.endpoint.trim() || store.get().endpoint, model: d.model.trim() || store.get().model, timeoutMs: store.get().timeoutMs },
+    { apiKey },
+  );
+  const r = await engine.testConnection();
+  if (r.ok) setStatus({ kind: "idle" });
+  return r;
+});
+ipcMain.handle("settings:pickApp", async () => {
+  const r = await dialog.showOpenDialog({ defaultPath: "/Applications", properties: ["openFile"], filters: [{ name: "Applications", extensions: ["app"] }] });
+  if (r.canceled || !r.filePaths[0]) return null;
+  return new Promise<string | null>((resolve) =>
+    execFile("/usr/bin/mdls", ["-raw", "-name", "kMDItemCFBundleIdentifier", r.filePaths[0]], (err, out) =>
+      resolve(err || !out || out === "(null)" ? null : out.trim())));
+});
+ipcMain.handle("settings:openAX", async () => {
+  await helper.request("prompt_ax");
+  openAXSettings();
+});
+
+// ---------- Lifecycle ----------
+app.whenReady().then(async () => {
+  app.dock?.hide();
+  tray = new Tray(nativeImage.createEmpty());
+  helper.onHotkey = () => void onHotkey();
+  helper.onRestart = () => void registerHotkey();
+  helper.start();
+  store.onChange(() => setStatus(status.kind === "paused" || status.kind === "idle" ? { kind: "idle" } : status));
+  setStatus({ kind: "idle" });
+
+  const st = await helper.request<{ ok: boolean; trusted?: boolean }>("status");
+  await registerHotkey();
+
+  if (!store.get().firstRunAcknowledged) {
+    await dialog.showMessageBox({
+      type: "info",
+      message: `${APP_NAME} sends your selected text to your configured AI endpoint`,
+      detail:
+        `When you press the hotkey, the selected text is sent to ${store.get().endpoint} to be proofread.\n\n` +
+        "• Password fields and excluded apps are never read.\n• Text is never logged or stored.\n" +
+        "• Use the menu bar to pause at any time.\n\nYou can change the endpoint in Settings.",
+      buttons: ["OK"],
+    });
+    store.update({ firstRunAcknowledged: true });
+  }
+  if (!st.trusted) {
+    setStatus({ kind: "needs_permission", message: "Grant Accessibility permission" });
+    await helper.request("prompt_ax");
+  }
+});
+
+app.on("window-all-closed", () => {}); // menu-bar app: stay alive
+app.on("before-quit", () => { globalShortcut.unregisterAll(); helper.stop(); });
+app.on("second-instance", openSettings);
