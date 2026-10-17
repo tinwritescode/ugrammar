@@ -1,5 +1,5 @@
 import {
-  app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, screen, shell, Tray,
+  app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, Notification, screen, shell, Tray,
 } from "electron";
 import { execFile } from "node:child_process";
 import { appendFileSync, cpSync, existsSync } from "node:fs";
@@ -16,6 +16,7 @@ const KEY_SERVICE = "Proofy";
 const KEY_ACCOUNT = "api-key";
 
 app.setName(APP_NAME);
+if (process.env.UGRAMMAR_THEME === "dark" || process.env.UGRAMMAR_THEME === "light") nativeTheme.themeSource = process.env.UGRAMMAR_THEME;
 if (!app.requestSingleInstanceLock()) app.quit();
 
 const root = join(import.meta.dirname, "..");

@@ -12,6 +12,7 @@ async function bundle(opts: Parameters<typeof Bun.build>[0]) {
 }
 
 await bundle({ entrypoints: ["src/main/main.ts"], outdir: "dist", target: "node", format: "esm", external: ["electron"] });
+await bundle({ entrypoints: ["src/main/shots.ts"], outdir: "dist", target: "node", format: "esm", external: ["electron"] });
 await bundle({ entrypoints: ["src/main/preload.ts"], outdir: "dist", target: "node", format: "cjs", external: ["electron"], naming: "preload.cjs" });
 await bundle({ entrypoints: ["src/renderer/popover.ts", "src/renderer/settings.ts"], outdir: "dist/renderer", target: "browser", format: "iife" });
 for (const f of ["popover.html", "popover.css", "settings.html", "settings.css", "theme.css"]) cpSync(`src/renderer/${f}`, `dist/renderer/${f}`);

@@ -22,7 +22,7 @@ const SYSTEM_PROMPT = [
 ].join(" ");
 
 export const EXPLAIN_PROMPT =
-  " After </corrected>, add <notes></notes> with one line per fix, max 6 lines, in Vietnamese, format: old → new: lý do ngắn gọn. Nothing outside the two tag blocks.";
+  " After </corrected>, add <notes></notes> with one line per fix (separate lines with newlines, never <br> or HTML), max 6 lines, in Vietnamese, format: old → new: lý do ngắn gọn. Nothing outside the two tag blocks.";
 
 export function buildMessages(text: string, dictionary: string[], explain = false) {
   let system = SYSTEM_PROMPT + (explain ? EXPLAIN_PROMPT : "");
@@ -38,7 +38,7 @@ export function buildMessages(text: string, dictionary: string[], explain = fals
 export function parseNotes(raw: string): string[] {
   const m = raw.match(/<notes>([\s\S]*?)(?:<\/notes>|$)/i);
   if (!m) return [];
-  return m[1].split("\n").map((l) => l.replace(/^\s*[-*•\d.)]+\s*/, "").trim()).filter(Boolean).slice(0, 6);
+  return m[1].split(/<br\s*\/?>|\n/i).map((l) => l.replace(/^\s*[-*•\d.)]+\s*/, "").trim()).filter(Boolean).slice(0, 6);
 }
 
 export function cleanModelOutput(raw: string, original: string): string {

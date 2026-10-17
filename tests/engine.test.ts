@@ -147,3 +147,7 @@ describe("parseNotes", () => {
     expect(parseNotes("<corrected>x</corrected>")).toEqual([]);
   });
 });
+
+test("parseNotes splits on <br>", () => {
+  expect(parseNotes("<notes>a → b: x<br>c → d: y<br/>e</notes>")).toEqual(["a → b: x", "c → d: y", "e"]);
+});

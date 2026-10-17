@@ -8,6 +8,7 @@
     "helper": "swift build -c release --package-path helper",
     "build": "bun run scripts/build.ts",
     "dev": "bun run helper && bun run build && electron .",
+    "shots": "bun run build && electron dist/shots.js",
     "start": "electron .",
     "test": "bun test",
     "typecheck": "tsc --noEmit",

@@ -6,7 +6,7 @@ const KEEP_MS = 8000;
 
 export type BadgeState = "idle" | "checking";
 
-const PAGE = `<!doctype html><meta charset="utf-8"><style>
+export const BADGE_PAGE = `<!doctype html><meta charset="utf-8"><style>
 html,body{margin:0;background:transparent;overflow:hidden;cursor:pointer;user-select:none}
 #d{position:relative;width:22px;height:22px;transition:transform .15s}
 #d svg{display:block;width:22px;height:22px;filter:drop-shadow(0 1px 3px rgba(0,0,0,.35))}
@@ -76,7 +76,7 @@ export class TypingBadge {
     });
     this.win.setAlwaysOnTop(true, "screen-saver");
     this.win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    void this.win.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(PAGE));
+    void this.win.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(BADGE_PAGE));
     return this.win;
   }
 

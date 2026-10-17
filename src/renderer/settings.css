@@ -13,5 +13,8 @@ li:hover { background: var(--surface-2); }
 li button { height: 24px; padding: 0 10px; }
 p.mut, .mut { color: var(--muted); margin: 0 0 6px; }
 .ok { color: var(--income); } .bad { color: var(--destructive); }
+#perm[hidden] { display: none; }
 #perm { background: oklch(0.8 0.16 80 / .16); border-radius: 18px; display: flex; gap: 10px; align-items: center; }
 .foot { margin-top: 16px; }
+#mods label { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--foreground); font-size: 13px; }
+#mods input { width: auto; height: auto; margin: 0; display: inline-block; }
