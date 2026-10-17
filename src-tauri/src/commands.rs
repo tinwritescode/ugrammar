@@ -1,5 +1,5 @@
 use crate::app::ctx;
-use crate::ipc::{Choice, PopoverPayload, SettingsView, Status, StatusKind, TrayState};
+use crate::ipc::{Choice, PopoverPayload, Status, StatusKind, TrayState};
 use serde::Deserialize;
 use serde_json::Value;
 use tauri::{Manager, WebviewWindow};
@@ -27,7 +27,7 @@ pub async fn popover_current() -> Option<PopoverPayload> {
 
 #[tauri::command]
 pub async fn badge_click() {
-    tauri::async_runtime::spawn(ctx().on_badge_click());
+    tauri::async_runtime::spawn(ctx().manual_check("badge click", true));
 }
 
 #[tauri::command]
@@ -41,30 +41,27 @@ pub async fn underline_click(window: WebviewWindow) {
 }
 
 #[tauri::command]
-pub async fn clear_insights() -> SettingsView {
+pub async fn clear_insights() {
     let c = ctx();
     c.clear_insights();
     c.refresh_tray();
-    c.settings_view().await
 }
 
 #[tauri::command]
-pub async fn save_settings(patch: Value) -> SettingsView {
+pub async fn save_settings(patch: Value) {
     let c = ctx();
     let before = c.settings().hotkey;
     if c.update_settings(patch).hotkey != before {
         c.register_hotkey().await;
     }
     c.refresh_tray();
-    c.settings_view().await
 }
 
 #[tauri::command]
-pub async fn set_api_key(key: String) -> SettingsView {
+pub async fn set_api_key(key: String) {
     let c = ctx();
     c.set_api_key(&key).await;
     c.refresh_tray();
-    c.settings_view().await
 }
 
 #[derive(Deserialize)]
@@ -108,13 +105,6 @@ pub async fn pick_app() -> Option<String> {
     let out = tokio::process::Command::new("/usr/bin/mdls").args(["-raw", "-name", "kMDItemCFBundleIdentifier"]).arg(path?).output().await.ok()?;
     let id = String::from_utf8_lossy(&out.stdout).trim().to_string();
     (out.status.success() && !id.is_empty() && id != "(null)").then_some(id)
-}
-
-#[tauri::command]
-pub async fn open_accessibility_settings() {
-    let c = ctx();
-    c.helper.request("prompt_ax", serde_json::json!({}), std::time::Duration::from_secs(10)).await;
-    c.open_ax_settings();
 }
 
 #[tauri::command]

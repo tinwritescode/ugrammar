@@ -34,11 +34,11 @@ export interface PopoverPayload {
   notes?: string[];
 }
 
-export interface SettingsView {
-  settings: Settings;
-  hasApiKey: boolean;
-  axTrusted: boolean;
-  insights: { from: string; to: string; count: number; note?: string }[];
+export interface Insight {
+  from: string;
+  to: string;
+  count: number;
+  note?: string;
 }
 
 export interface TrayState {
@@ -46,7 +46,7 @@ export interface TrayState {
   message?: string;
   settings: Settings;
   hotkey: string;
-  insights: SettingsView["insights"];
+  insights: Insight[];
   hasApiKey: boolean;
 }
 
@@ -64,12 +64,11 @@ export interface ProofyApi {
   badgeClick(): void;
   badgeMenu(): void;
   underlineClick(): void;
-  clearInsights(): Promise<SettingsView>;
-  saveSettings(patch: Partial<Settings>): Promise<SettingsView>;
-  setApiKey(key: string): Promise<SettingsView>;
+  clearInsights(): Promise<void>;
+  saveSettings(patch: Partial<Settings>): Promise<void>;
+  setApiKey(key: string): Promise<void>;
   testConnection(draft: { endpoint: string; model: string; apiKey?: string }): Promise<TestResult>;
   pickApp(): Promise<string | null>;
-  openAccessibilitySettings(): Promise<void>;
   getTray(): Promise<TrayState>;
   onTray(cb: (s: TrayState) => void): void;
   trayAction(a: TrayAction): void;

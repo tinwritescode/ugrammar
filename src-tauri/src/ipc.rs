@@ -78,15 +78,6 @@ impl Status {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SettingsView {
-    pub settings: Settings,
-    pub has_api_key: bool,
-    pub ax_trusted: bool,
-    pub insights: Vec<Insight>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct TrayState {
     pub status: StatusKind,
     #[serde(skip_serializing_if = "Option::is_none")]

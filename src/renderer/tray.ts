@@ -1,4 +1,5 @@
 import { proofy } from "./bridge";
+import { el } from "./dom";
 import type { Hotkey, Settings, TrayState } from "../shared/ipc";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -18,12 +19,7 @@ for (const c of "ABCDEFGHIJKLMNOPQRSTUVWXYZ") keySel.add(new Option(c, c));
 
 const save = (patch: Partial<Settings>) => void proofy.saveSettings(patch);
 
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, ...kids: (Node | string)[]) {
-  const e = document.createElement(tag);
-  e.className = cls;
-  e.append(...kids);
-  return e;
-}
+type SwitchKey = "quickFix" | "explain" | "showBadge";
 
 function host(endpoint: string) {
   try { return new URL(endpoint).host; } catch { return endpoint; }
@@ -36,12 +32,8 @@ function setValue(id: string, v: string) {
 }
 
 function renderTags(id: string, items: string[], onRemove: (v: string) => void) {
-  $(id).replaceChildren(...items.map((t) => {
-    const x = el("button", "", "×");
-    x.title = "Xoá";
-    x.onclick = () => onRemove(t);
-    return el("span", "tag", el("span", "", t), x);
-  }));
+  $(id).replaceChildren(...items.map((t) =>
+    el("span", { className: "tag" }, el("span", {}, t), el("button", { title: "Xoá", onclick: () => onRemove(t) }, "×"))));
 }
 
 function render(s: TrayState) {
@@ -55,10 +47,10 @@ function render(s: TrayState) {
   $("perm").hidden = s.status !== "needs_permission";
   const mode = cfg.autoCheck ? cfg.autoCheckMode : "off";
   for (const b of $("mode").querySelectorAll<HTMLButtonElement>("button")) b.classList.toggle("on", b.dataset.mode === mode);
-  for (const c of document.querySelectorAll<HTMLInputElement>(".switch")) c.checked = cfg[c.dataset.key as "quickFix" | "explain" | "showBadge"];
+  for (const c of document.querySelectorAll<HTMLInputElement>(".switch")) c.checked = cfg[c.dataset.key as SwitchKey];
   $("insights").replaceChildren(...(s.insights.length
-    ? s.insights.map((i) => el("li", "", el("span", "pair", el("del", "", i.from || "∅"), " → ", el("ins", "", i.to || "∅")), el("span", "count", `${i.count}×`)))
-    : [el("li", "empty", "Chưa có lỗi lặp lại. Tốt lắm!")]));
+    ? s.insights.map((i) => el("li", {}, el("span", { className: "pair" }, el("del", {}, i.from || "∅"), " → ", el("ins", {}, i.to || "∅")), el("span", { className: "count" }, `${i.count}×`)))
+    : [el("li", { className: "empty" }, "Chưa có lỗi lặp lại. Tốt lắm!")]));
   $("engine").textContent = `${cfg.model} · ${host(cfg.endpoint)}`;
   $("engine").title = cfg.endpoint;
   if (![...langSel.options].some((o) => o.value === cfg.explainLang)) langSel.add(new Option(cfg.explainLang, cfg.explainLang));
@@ -108,7 +100,7 @@ for (const b of document.querySelectorAll<HTMLButtonElement>("[data-tone]")) {
   b.onclick = () => proofy.trayAction(b.dataset.tone === "friendly" ? "friendly" : b.dataset.tone === "short" ? "short" : "formal");
 }
 for (const c of document.querySelectorAll<HTMLInputElement>(".switch")) {
-  c.onchange = () => save({ [c.dataset.key as "quickFix" | "explain" | "showBadge"]: c.checked });
+  c.onchange = () => save({ [c.dataset.key as SwitchKey]: c.checked });
 }
 
 langSel.onchange = () => save({ explainLang: langSel.value });
@@ -158,11 +150,11 @@ function addOnEnter(id: string, add: (v: string) => void) {
 }
 const hasCI = (list: string[], v: string) => list.some((x) => x.toLowerCase() === v.toLowerCase());
 addOnEnter("newWord", (w) => state && !hasCI(state.settings.dictionary, w) && save({ dictionary: [...state.settings.dictionary, w] }));
-addOnEnter("newApp", (a) => state && !state.settings.excludedApps.includes(a) && save({ excludedApps: [...state.settings.excludedApps, a] }));
-$("pickApp").onclick = async () => {
-  const id = await proofy.pickApp();
+function excludeApp(id: string | null) {
   if (id && state && !state.settings.excludedApps.includes(id)) save({ excludedApps: [...state.settings.excludedApps, id] });
-};
+}
+addOnEnter("newApp", excludeApp);
+$("pickApp").onclick = async () => excludeApp(await proofy.pickApp());
 $("clearInsights").onclick = () => void proofy.clearInsights();
 
 proofy.onTray(render);

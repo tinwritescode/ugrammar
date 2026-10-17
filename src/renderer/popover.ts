@@ -1,13 +1,8 @@
 import { proofy } from "./bridge";
+import { el } from "./dom";
 import type { PopoverPayload } from "../shared/ipc";
 
 const card = document.getElementById("card")!;
-
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...kids: (Node | string)[]) {
-  const e = Object.assign(document.createElement(tag), props);
-  e.append(...kids);
-  return e;
-}
 
 function render(p: PopoverPayload) {
   card.replaceChildren();

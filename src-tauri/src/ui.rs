@@ -19,7 +19,18 @@ pub struct Area {
     pub h: f64,
 }
 
+const INSET: f64 = 8.0;
+
 impl Area {
+    /// Left edge that keeps a `w`-wide window inset inside this area.
+    pub fn fit_x(&self, x: f64, w: f64) -> f64 {
+        x.max(self.x + INSET).min(self.x + self.w - w - INSET)
+    }
+
+    pub fn fit_y(&self, y: f64, h: f64) -> f64 {
+        y.max(self.y + INSET).min(self.y + self.h - h - INSET)
+    }
+
     fn distance2(&self, x: f64, y: f64) -> f64 {
         let dx = (self.x - x).max(x - (self.x + self.w)).max(0.0);
         let dy = (self.y - y).max(y - (self.y + self.h)).max(0.0);
@@ -123,6 +134,10 @@ pub fn show_panel(app: &AppHandle, label: &str) {
             p.show();
         }
     });
+}
+
+pub fn is_visible(app: &AppHandle, label: &str) -> bool {
+    app.get_webview_window(label).is_some_and(|w| w.is_visible().unwrap_or(false))
 }
 
 pub fn hide(app: &AppHandle, label: &str) {
