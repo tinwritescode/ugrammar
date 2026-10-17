@@ -1,6 +1,6 @@
 import { diffWords } from "../shared/diff";
 import type { PopoverPayload } from "../shared/ipc";
-import type { GrammarEngine } from "./engine/types";
+import type { GrammarEngine, Tone } from "./engine/types";
 import type { HelperReply, SelectionReply } from "./helper";
 import type { Settings } from "./settings";
 
@@ -27,6 +27,8 @@ export interface FlowDeps {
   /** Immediate "Checking…" feedback; replaced by showDiff/showMessage or removed by hideLoading. */
   showLoading(): void;
   hideLoading(): void;
+  /** Called after text was replaced (accept or quick fix); used for insights. */
+  onApplied?(original: string, corrected: string, notes?: string[]): void;
 }
 
 const READ_ERRORS: Record<string, string> = {
@@ -45,7 +47,7 @@ export class FixFlow {
   }
 
   /** `selectAll`: used by the badge click, checks the whole field when nothing is selected. */
-  async run(opts: { selectAll?: boolean } = {}): Promise<FixOutcome> {
+  async run(opts: { selectAll?: boolean; tone?: Tone } = {}): Promise<FixOutcome> {
     const s = this.d.settings();
     if (s.paused) return "paused";
     if (this.busy) return "busy";
@@ -76,7 +78,7 @@ export class FixFlow {
       let result: { corrected: string; notes?: string[] };
       try {
         const engine = await this.d.makeEngine();
-        result = (await engine.check({ text: sel.text, dictionary: s.dictionary, explain: s.explain }));
+        result = (await engine.check({ text: sel.text, dictionary: s.dictionary, explain: s.explain, explainLang: s.explainLang, tone: opts.tone }));
       } catch (e) {
         const msg = (e as Error).message || "Engine error";
         this.d.hideLoading();
@@ -93,6 +95,17 @@ export class FixFlow {
       }
 
       this.idle();
+      if (s.quickFix && !opts.tone) {
+        const w = await this.d.writeSelection(corrected, sel.pid, sel.method);
+        if (!w.ok) {
+          this.d.hideLoading();
+          this.d.notify(w.error === "focus_changed" ? "Focus changed; text not replaced." : `Could not replace text (${w.error}).`);
+          return "write_failed";
+        }
+        this.d.onApplied?.(sel.text, corrected, result.notes);
+        this.d.showMessage("Fixed ✓  ⌘Z to undo");
+        return "applied";
+      }
       const choice = await this.d.showDiff({
         kind: "diff",
         original: sel.text,
@@ -109,6 +122,7 @@ export class FixFlow {
         this.d.notify(msg);
         return "write_failed";
       }
+      this.d.onApplied?.(sel.text, corrected, result.notes);
       return "applied";
     } finally {
       this.busy = false;

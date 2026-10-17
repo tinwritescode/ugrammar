@@ -3,10 +3,10 @@ import { FixFlow, type FlowDeps, type Status } from "../src/main/flow";
 import { EngineError } from "../src/main/engine/types";
 import { DEFAULT_SETTINGS } from "../src/main/settings";
 
-function setup(over: Partial<FlowDeps> = {}, paused = false) {
+function setup(over: Partial<FlowDeps> = {}, paused = false, extra: Partial<typeof DEFAULT_SETTINGS> = {}) {
   const log = { status: [] as Status[], notes: [] as string[], msgs: [] as string[], writes: [] as string[], engineCalls: 0, loading: 0, hidden: 0 };
   const deps: FlowDeps = {
-    settings: () => ({ ...DEFAULT_SETTINGS, paused, dictionary: ["Xpiki"] }),
+    settings: () => ({ ...DEFAULT_SETTINGS, paused, dictionary: ["Xpiki"], ...extra }),
     readSelection: async () => ({ ok: true, text: "I has a apple.", method: "ax", pid: 7, appName: "Notes" }),
     writeSelection: async (t) => (log.writes.push(t), { ok: true }),
     makeEngine: async () => ({
@@ -23,6 +23,24 @@ function setup(over: Partial<FlowDeps> = {}, paused = false) {
   };
   return { flow: new FixFlow(deps), log };
 }
+
+describe("FixFlow quickFix and tone", () => {
+  test("quickFix writes without showing the diff", async () => {
+    let diffs = 0;
+    const applied: string[] = [];
+    const { flow, log } = setup({ showDiff: async () => (diffs++, "dismiss"), onApplied: (_o, c) => applied.push(c) }, false, { quickFix: true });
+    expect(await flow.run()).toBe("applied");
+    expect(diffs).toBe(0);
+    expect(log.writes).toEqual(["I have an apple."]);
+    expect(applied).toEqual(["I have an apple."]);
+  });
+  test("tone always shows the diff, even with quickFix", async () => {
+    let diffs = 0;
+    const { flow } = setup({ showDiff: async () => (diffs++, "dismiss") }, false, { quickFix: true });
+    expect(await flow.run({ tone: "formal" })).toBe("dismissed");
+    expect(diffs).toBe(1);
+  });
+});
 
 describe("FixFlow", () => {
   test("accept writes corrected text", async () => {
