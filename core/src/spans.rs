@@ -38,7 +38,7 @@ pub fn diff_spans(original: &str, corrected: &str) -> Vec<Span> {
     spans.into_iter().map(trim_span).collect()
 }
 
-/// Drop shared leading/trailing whitespace so underlines hug the words.
+/// Drop shared leading/trailing whitespace so each fix hugs its word.
 fn trim_span(mut s: Span) -> Span {
     let lead = s.original.len() - s.original.trim_start_matches(is_js_space_char).len();
     if lead > 0 && s.replacement.starts_with(&s.original[..lead]) {

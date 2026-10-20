@@ -1,8 +1,0 @@
-html,body{margin:0;background:transparent;overflow:hidden;cursor:pointer;user-select:none}
-#d{position:relative;width:22px;height:22px;transition:transform .15s}
-#d svg{display:block;width:22px;height:22px;filter:drop-shadow(0 1px 3px rgba(0,0,0,.35))}
-#d:hover{transform:scale(1.12)}
-.typing{transform:scale(1.18)}
-.ring{display:none;position:absolute;inset:-2px;border-radius:50%;border:2px solid transparent;border-top-color:#fff;animation:s .7s linear infinite}
-.checking .ring{display:block}
-@keyframes s{to{transform:rotate(360deg)}}

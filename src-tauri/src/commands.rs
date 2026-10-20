@@ -2,7 +2,7 @@ use crate::app::ctx;
 use crate::ipc::{Choice, PopoverPayload, Status, StatusKind, TrayState};
 use serde::Deserialize;
 use serde_json::Value;
-use tauri::{Manager, WebviewWindow};
+use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 use tokio::sync::oneshot;
 use ugrammar_core::engine::{ConnectionStatus, OpenAICompatibleEngine, OpenAIConfig};
@@ -23,21 +23,6 @@ pub async fn popover_resize(height: f64, width: Option<f64>) {
 #[tauri::command]
 pub async fn popover_current() -> Option<PopoverPayload> {
     ctx().popover_payload()
-}
-
-#[tauri::command]
-pub async fn badge_click() {
-    tauri::async_runtime::spawn(ctx().manual_check("badge click", true));
-}
-
-#[tauri::command]
-pub async fn badge_menu() {
-    let _ = ctx().app.run_on_main_thread(|| ctx().on_badge_menu());
-}
-
-#[tauri::command]
-pub async fn underline_click(window: WebviewWindow) {
-    ctx().underline_clicked(window.label());
 }
 
 #[tauri::command]

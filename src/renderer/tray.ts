@@ -47,7 +47,7 @@ function render(s: TrayState) {
   $("perm").hidden = s.status !== "needs_permission";
   $("update").hidden = !s.update;
   $("updateText").textContent = `Bản ${s.update ?? ""} đã cài xong.`;
-  const mode = cfg.autoCheck ? cfg.autoCheckMode : "off";
+  const mode = cfg.autoCheck ? "popup" : "off";
   for (const b of $("mode").querySelectorAll<HTMLButtonElement>("button")) b.classList.toggle("on", b.dataset.mode === mode);
   for (const c of document.querySelectorAll<HTMLInputElement>(".switch")) c.checked = cfg[c.dataset.key as SwitchKey];
   $("insights").replaceChildren(...(s.insights.length
@@ -97,7 +97,7 @@ $("github").onclick = (e) => {
 };
 void proofy.appVersion().then((v) => ($("version").textContent = `v${v}`));
 for (const b of $("mode").querySelectorAll<HTMLButtonElement>("button")) {
-  b.onclick = () => save(b.dataset.mode === "off" ? { autoCheck: false } : { autoCheck: true, autoCheckMode: "popup" });
+  b.onclick = () => save(b.dataset.mode === "off" ? { autoCheck: false } : { autoCheck: true });
 }
 for (const b of document.querySelectorAll<HTMLButtonElement>("[data-tone]")) {
   b.onclick = () => proofy.trayAction(b.dataset.tone === "friendly" ? "friendly" : b.dataset.tone === "short" ? "short" : "formal");

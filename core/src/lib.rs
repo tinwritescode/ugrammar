@@ -1,4 +1,3 @@
-pub mod badge;
 pub mod diff;
 pub mod engine;
 pub mod insights;

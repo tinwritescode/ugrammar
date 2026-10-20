@@ -13,7 +13,7 @@ Layout:
 
 - `core/` is the platform-free Rust crate: settings, engine client, diff, sentence and span logic, insights.
 - `src-tauri/` is the app shell: windows and panels, the tray, the hotkey/check flow, auto-check, and the helper process.
-- `src/renderer/` holds the web UI (popover, tray panel, badge, underline), bundled into `dist/` by `scripts/build.ts`.
+- `src/renderer/` holds the web UI (popover, tray panel), bundled into `dist/` by `scripts/build.ts`.
 - `helper/` is the Swift sidecar: hotkey, Accessibility read/write, clipboard, Keychain. It speaks JSON lines over stdio.
 
 ## Build the app

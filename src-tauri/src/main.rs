@@ -11,7 +11,6 @@ use ipc::Choice;
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{ActivationPolicy, Theme, WindowEvent};
 use tauri_plugin_global_shortcut::ShortcutState;
-use ugrammar_core::badge::BADGE_SIZE;
 
 fn main() {
     tauri::Builder::default()
@@ -43,9 +42,6 @@ fn main() {
             commands::popover_action,
             commands::popover_resize,
             commands::popover_current,
-            commands::badge_click,
-            commands::badge_menu,
-            commands::underline_click,
             commands::clear_insights,
             commands::save_settings,
             commands::set_api_key,
@@ -62,7 +58,6 @@ fn main() {
             tauri::async_runtime::spawn(ctx().helper_events(events));
 
             ui::float_panel(h, "popover", "popover.html", POPOVER_W, 200.0, true)?;
-            ui::float_panel(h, "badge", "badge.html", BADGE_SIZE, BADGE_SIZE, false)?;
             let tray = ui::tray_window(h, TRAY_W, 400.0)?;
             tray.on_window_event(|e| {
                 if let WindowEvent::Focused(false) = e {

@@ -72,7 +72,7 @@ impl FixFlow {
         d.set_status(Status::of(if d.settings().paused { StatusKind::Paused } else { StatusKind::Idle }));
     }
 
-    /// `select_all`: used by the badge click, checks the whole field when nothing is selected.
+    /// `select_all`: checks the whole field when nothing is selected.
     pub async fn run<D: FlowDeps>(&self, d: &D, select_all: bool, tone: Option<Tone>) -> FixOutcome {
         let s = d.settings();
         if s.paused {

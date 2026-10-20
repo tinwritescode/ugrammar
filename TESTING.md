@@ -40,26 +40,15 @@ Automated: `bun test` (engine, diff, settings, flow) and `bun run typecheck`.
 - [ ] Status line: Ready / Checking… / Paused / Error / Needs Accessibility permission.
 - [ ] Quit stops the helper (`pgrep grammar-helper` empty).
 
-## Typing badge
-- [ ] Off by default. Settings → "Typing badge" checkbox → Save: badge starts appearing; untick + Save: it never shows.
-- [ ] Click into a TextEdit/Notes text area: no dot yet. Type a character: dot appears beside the caret, pulses while typing, hides ~8s after the last change (stays while hovered).
-- [ ] Select text (drag or ⇧←): dot appears at once beside the selection; click it to check just that text.
-- [ ] Click the dot with nothing selected: whole field is checked (standard text fields only; elsewhere select text and use ⌥⌘G).
-- [ ] In Chrome/Electron apps (no caret bounds) the dot sits in the bottom-right corner of the focused field.
-- [ ] Dot is hidden in password fields, excluded apps, when paused, and without Accessibility permission.
-- [ ] Press ⌥⌘G: dot turns into a spinner while checking.
-
-## Explanations and badge menu
+## Explanations
 - [ ] Diff popover lists a short Vietnamese reason per fix under the text (setting `explain` in settings.json; set false for ~1.5s faster checks).
-- [ ] Right-click the badge: "Ẩn ở app này" adds the app to the exclusion list; "Tạm dừng 1 giờ" pauses and auto-resumes.
 
 ## Auto-check, quick fix, tone (manual)
-- Settings → Checking → enable "Auto-check". In Notes/TextEdit type `She dont like it.` and wait ~1s: a red underline appears under the error; click it → small card → Accept replaces only that word.
-- Edit the sentence after the underline appears: the underline follows or disappears; Accept on a changed word reports "Text changed".
+- Settings → Checking → enable "Auto-check". In Notes/TextEdit type `She dont like it.` and wait ~1s: the diff popover opens under the sentence; Accept replaces only that sentence.
 - Enable "Hotkey fixes at once": ⌥⌘G replaces directly; ⌘Z restores.
 - ⌥⌘T on a selection → menu Formal/Friendly/Short → diff popover.
 - Fix the same mistake twice → Settings → Insights lists it.
-- Slack / Claude desktop / Chrome contenteditable: type `She dont like it.` → underline under "dont" (bounds come from the AXStaticText leaves). Click a toolbar button and back: underline returns, no re-check.
-- Settings → "When a finished sentence has mistakes" → "Show the fix with explanations at once": type `She dont like it.` and stop → "Checking…" spinner under the sentence, then diff popover with reasons opens under the sentence; Accept rewrites only that sentence, Esc/Dismiss leaves it and hides its underlines. Keep typing right after the period → spinner closes, no popover, underline only.
-- Delete the sentence and type it again: underline comes back at once (cached result, no new request); a dismissed fix does not come back.
-- Debug: `grep auto /tmp/proofy-debug.log` — `marks=N/M` = drawn/known issues; `visible=false why=…` names the failing step (role, no value, no range).
+- Slack / Claude desktop / Chrome contenteditable: type `She dont like it.` → diff popover opens under the sentence (bounds come from the AXStaticText leaves). Click a toolbar button and back: no re-check.
+- Type `She dont like it.` and stop → "Checking…" spinner under the sentence, then diff popover with reasons opens under the sentence; Accept rewrites only that sentence, Esc/Dismiss closes it. Keep typing right after the period → spinner closes, no popover.
+- Delete the sentence and type it again: popover comes back at once (cached result, no new request); a dismissed fix does not come back.
+- Debug: `grep auto /tmp/proofy-debug.log` — `visible=false why=…` names the failing step (role, no value, no range).

@@ -23,13 +23,6 @@ pub struct Hotkey {
     pub mods: Vec<Mod>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum AutoCheckMode {
-    Underline,
-    Popup, // open the fix + reasons for the sentence at once
-}
-
 /// Field order is the order `settings.json` is written in.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,9 +35,7 @@ pub struct Settings {
     pub hotkey: Hotkey,
     pub paused: bool,
     pub explain: bool, // short Vietnamese reason per fix (slower)
-    pub show_badge: bool, // floating badge next to the typing caret (off by default: distracting)
     pub auto_check: bool, // check each sentence when its end is typed (. ? ! Enter)
-    pub auto_check_mode: AutoCheckMode,
     pub quick_fix: bool, // hotkey replaces at once, no popover (⌘Z undoes)
     pub explain_lang: String, // language of the per-fix reasons
     pub first_run_acknowledged: bool,
@@ -73,9 +64,7 @@ impl Default for Settings {
             hotkey: Hotkey { key: "G".into(), mods: vec![Mod::Alt, Mod::Cmd] },
             paused: false,
             explain: true,
-            show_badge: false,
             auto_check: false,
-            auto_check_mode: AutoCheckMode::Popup,
             quick_fix: false,
             explain_lang: "Vietnamese".into(),
             first_run_acknowledged: false,
@@ -129,9 +118,7 @@ pub fn normalize_settings(raw: &Value) -> Settings {
         hotkey: hotkey(r.get("hotkey")).unwrap_or(d.hotkey),
         paused: is("paused", true),
         explain: !is("explain", false),
-        show_badge: false, // retired: no badge, no underline
         auto_check: is("autoCheck", true),
-        auto_check_mode: AutoCheckMode::Popup,
         quick_fix: is("quickFix", true),
         explain_lang: str_or("explainLang", d.explain_lang),
         first_run_acknowledged: is("firstRunAcknowledged", true),
@@ -299,7 +286,7 @@ mod tests {
         let dir = TempDir::new();
         let mut s = SettingsStore::new(dir.path());
         s.update(json!({ "excludedApps": [], "hotkey": { "key": "k", "mods": ["cmd"] } })).unwrap();
-        let expected = "{\n  \"endpoint\": \"http://localhost:20128/v1\",\n  \"model\": \"xpiki/gpt-6.1-sol\",\n  \"timeoutMs\": 10000,\n  \"dictionary\": [],\n  \"excludedApps\": [],\n  \"hotkey\": {\n    \"key\": \"K\",\n    \"mods\": [\n      \"cmd\"\n    ]\n  },\n  \"paused\": false,\n  \"explain\": true,\n  \"showBadge\": false,\n  \"autoCheck\": false,\n  \"autoCheckMode\": \"popup\",\n  \"quickFix\": false,\n  \"explainLang\": \"Vietnamese\",\n  \"firstRunAcknowledged\": false\n}\n";
+        let expected = "{\n  \"endpoint\": \"http://localhost:20128/v1\",\n  \"model\": \"xpiki/gpt-6.1-sol\",\n  \"timeoutMs\": 10000,\n  \"dictionary\": [],\n  \"excludedApps\": [],\n  \"hotkey\": {\n    \"key\": \"K\",\n    \"mods\": [\n      \"cmd\"\n    ]\n  },\n  \"paused\": false,\n  \"explain\": true,\n  \"autoCheck\": false,\n  \"quickFix\": false,\n  \"explainLang\": \"Vietnamese\",\n  \"firstRunAcknowledged\": false\n}\n";
         assert_eq!(fs::read_to_string(dir.path().join("settings.json")).unwrap(), expected);
         assert!(!dir.path().join("settings.json.tmp").exists());
     }
@@ -318,12 +305,6 @@ mod tests {
     fn invalid_hotkey_falls_back() {
         assert_eq!(normalize_settings(&json!({ "hotkey": { "key": "??", "mods": [] } })).hotkey, Settings::default().hotkey);
         assert_eq!(normalize_settings(&json!({ "hotkey": { "key": "a", "mods": ["cmd", "meta"] } })).hotkey, Settings::default().hotkey);
-    }
-
-    #[test]
-    fn retired_badge_and_underline_are_always_off() {
-        assert!(!normalize_settings(&json!({ "showBadge": true })).show_badge);
-        assert_eq!(normalize_settings(&json!({ "autoCheckMode": "underline" })).auto_check_mode, AutoCheckMode::Popup);
     }
 
     #[test]

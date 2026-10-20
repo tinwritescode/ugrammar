@@ -16,9 +16,7 @@ export interface Settings {
   hotkey: Hotkey;
   paused: boolean;
   explain: boolean;
-  showBadge: boolean;
   autoCheck: boolean;
-  autoCheckMode: "underline" | "popup";
   quickFix: boolean;
   explainLang: string;
   firstRunAcknowledged: boolean;
@@ -62,9 +60,6 @@ export interface ProofyApi {
   onPopover(cb: (p: PopoverPayload) => void): void;
   popoverAction(action: "accept" | "dismiss"): void;
   popoverResize(height: number, width?: number): void;
-  badgeClick(): void;
-  badgeMenu(): void;
-  underlineClick(): void;
   clearInsights(): Promise<void>;
   saveSettings(patch: Partial<Settings>): Promise<void>;
   setApiKey(key: string): Promise<void>;

@@ -2,7 +2,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use ugrammar_core::sentence::{sentence_ending_at, SentenceRange, DEFAULT_MIN_WORDS};
 use ugrammar_core::spans::diff_spans;
-use ugrammar_core::text::{from_u16, js_trim, to_u16, utf16_len as len16};
+use ugrammar_core::text::{js_trim, to_u16, utf16_len as len16};
 
 pub const POLL_MS: u64 = 250;
 const STABLE_MS: u64 = 500;
@@ -51,21 +51,14 @@ pub struct Snapshot {
     pub bounds: Option<Vec<Option<Rect>>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-pub struct Mark {
-    pub id: u64,
-    #[serde(flatten)]
-    pub rect: Rect,
-}
-
-/// A checked sentence with fixes, for the popup mode. Offsets are UTF-16, into the field text.
+/// A checked sentence with fixes. Offsets are UTF-16, into the field text.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SentenceFix {
     pub start: usize,
     pub original: String,
     pub corrected: String,
     pub notes: Vec<String>,
-    /// Issue the popup anchors to (its underline bounds).
+    /// Issue the popup anchors to.
     pub first_id: u64,
 }
 
@@ -74,19 +67,16 @@ pub struct SentenceFix {
 pub struct Job {
     pub offset: usize,
     pub sentence: String,
-    pub popup: bool,
     field: String,
     before: Vec<u16>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Effect {
-    /// Underline marks changed; empty = hide all.
-    Marks(Vec<Mark>),
-    /// Popup mode: show (start, length) / hide (None) a "Checking…" hint at the sentence while the request runs.
+    /// Show (start, length) / hide (None) a "Checking…" hint at the sentence while the request runs.
     Loading(Option<(usize, usize)>),
     Check(Job),
-    /// Popup mode: fires only while the user has not typed past the sentence.
+    /// Fires only while the user has not typed past the sentence.
     Sentence(SentenceFix),
     /// Diagnostics: outcomes only, never text.
     Log(String),
@@ -139,7 +129,6 @@ pub struct AutoChecker {
     field: String,
     last_text: Vec<u16>,
     logged_text: Vec<u16>,
-    logged_marks: String,
     changed_at: u64,
     /// Sentence seen ending at the caret; checked even if the user types past it before the text settles.
     pending: Option<SentenceRange>,
@@ -155,12 +144,11 @@ impl AutoChecker {
         AutoChecker { next_id: 1, ..Default::default() }
     }
 
-    pub fn reset(&mut self) -> Vec<Effect> {
+    pub fn reset(&mut self) {
         self.issues.clear();
         self.last_text.clear();
         self.field.clear();
         self.pending = None;
-        vec![Effect::Marks(vec![])]
     }
 
     pub fn issue(&self, id: u64) -> Option<&Issue> {
@@ -187,36 +175,6 @@ impl AutoChecker {
         self.last_text.clear();
     }
 
-    /// After a range was replaced: forget that issue and let the next tick re-anchor the rest.
-    pub fn applied(&mut self, id: u64) {
-        if let Some(it) = self.issue(id).cloned() {
-            let entries: Vec<(String, Vec<Fix>)> = self.checked.iter().filter_map(|(k, v)| Some((k.clone(), v.clone()?))).collect();
-            for (sentence, fixes) in entries {
-                let Some(sp) = fixes.iter().find(|x| x.original == it.fix.original && x.replacement == it.fix.replacement).cloned() else { continue };
-                // The patched sentence keeps its other fixes, shifted, instead of a fresh request.
-                let delta = len16(&sp.replacement) as isize - len16(&sp.original) as isize;
-                let rest = fixes
-                    .into_iter()
-                    .filter(|x| *x != sp)
-                    .map(|mut x| {
-                        if x.start >= sp.end {
-                            x.start = (x.start as isize + delta) as usize;
-                            x.end = (x.end as isize + delta) as usize;
-                        }
-                        x
-                    })
-                    .collect();
-                let s16 = to_u16(&sentence);
-                let mut patched = s16[..sp.start.min(s16.len())].to_vec();
-                patched.extend(sp.replacement.encode_utf16());
-                patched.extend_from_slice(&s16[sp.end.min(s16.len())..]);
-                self.cache_clean(&from_u16(&patched), rest);
-            }
-        }
-        self.dismiss(id);
-        self.last_text.clear();
-    }
-
     fn cache_put(&mut self, sentence: String, fixes: Option<Vec<Fix>>) {
         self.checked.insert(sentence, fixes);
         if self.checked.len() > MAX_CACHE {
@@ -228,15 +186,10 @@ impl AutoChecker {
         self.cache_put(js_trim(sentence).to_string(), Some(fixes)); // sentence_ending_at never includes edge whitespace
     }
 
-    /// Ranges to ask bounds for, in issue order; pass them back as `asked`.
-    pub fn asked(&self) -> Vec<Issue> {
-        self.issues.clone()
-    }
-
-    pub fn on_snapshot(&mut self, snap: Snapshot, asked: &[Issue], now: u64, popup: bool) -> Vec<Effect> {
+    pub fn on_snapshot(&mut self, snap: Snapshot, now: u64) -> Vec<Effect> {
         let mut out = Vec::new();
         let (true, Some(true), Some(text)) = (snap.ok, snap.visible, snap.text.as_deref()) else {
-            // Focus often blips to a button/toolbar for one poll: hide marks but keep issues, so the field comes back intact.
+            // Focus often blips to a button/toolbar for one poll: keep issues, so the field comes back intact.
             out.push(Effect::Log(format!(
                 "snap ok={} visible={:?} err={} why={}",
                 snap.ok,
@@ -244,7 +197,6 @@ impl AutoChecker {
                 snap.error.as_deref().unwrap_or("-"),
                 snap.reason.as_ref().map_or("-".into(), |r| r.to_string())
             )));
-            out.push(Effect::Marks(vec![]));
             return out;
         };
         let text = to_u16(text);
@@ -253,7 +205,7 @@ impl AutoChecker {
         self.pid = snap.pid;
         self.app_name = snap.app_name.clone();
         if field != self.field {
-            out.extend(self.reset());
+            self.reset();
             self.field = field.clone();
             self.checked.clear();
         }
@@ -266,7 +218,6 @@ impl AutoChecker {
                 self.pending = Some(s);
             }
         }
-        self.publish(snap.bounds.as_deref().unwrap_or_default(), snap.bounds.is_some(), asked, &mut out);
         if self.checking || snap.sel_len.unwrap_or(0) > 0 {
             return out;
         }
@@ -275,7 +226,7 @@ impl AutoChecker {
             // Typed past it: the sentence is done, no need to wait for the text to settle.
             self.pending = None;
             if slice_eq(&text, p.start, p.end, &p.text) && !self.checked.contains_key(&p.text) {
-                self.begin(p, snap.bundle_id.as_deref(), field, popup, &mut out);
+                self.begin(p, snap.bundle_id.as_deref(), field, &mut out);
                 return out;
             }
         }
@@ -294,21 +245,19 @@ impl AutoChecker {
             self.restore(sent.start, &sent.text);
             return out;
         }
-        self.begin(sent, snap.bundle_id.as_deref(), field, popup, &mut out);
+        self.begin(sent, snap.bundle_id.as_deref(), field, &mut out);
         out
     }
 
-    fn begin(&mut self, sent: SentenceRange, app: Option<&str>, field: String, popup: bool, out: &mut Vec<Effect>) {
+    fn begin(&mut self, sent: SentenceRange, app: Option<&str>, field: String, out: &mut Vec<Effect>) {
         if self.pending.as_ref().is_some_and(|p| p.text == sent.text) {
             self.pending = None;
         }
         self.cache_put(sent.text.clone(), None);
         out.push(Effect::Log(format!("check start app={app:?} len={}", sent.end - sent.start)));
         self.checking = true;
-        if popup {
-            self.set_loading(Some((sent.start, sent.end - sent.start)), out);
-        }
-        out.push(Effect::Check(Job { offset: sent.start, sentence: sent.text, popup, field, before: self.last_text.clone() }));
+        self.set_loading(Some((sent.start, sent.end - sent.start)), out);
+        out.push(Effect::Check(Job { offset: sent.start, sentence: sent.text, field, before: self.last_text.clone() }));
     }
 
     /// Same sentence typed again (or retyped elsewhere in the field): re-add its cached issues without a new request.
@@ -333,24 +282,6 @@ impl AutoChecker {
             all.push(Issue { id, fix: Fix { start: offset + f.start, end: offset + f.end, ..f } });
         }
         self.issues = revalidate(all, &self.last_text);
-    }
-
-    /// Bounds come back in the order of `asked`; only issues that have not moved since keep their mark this tick.
-    fn publish(&mut self, bounds: &[Option<Rect>], had_bounds: bool, asked: &[Issue], out: &mut Vec<Effect>) {
-        let marks: Vec<Mark> = self
-            .issues
-            .iter()
-            .filter_map(|it| {
-                let i = asked.iter().position(|a| a.id == it.id && a.fix.start == it.fix.start)?;
-                Some(Mark { id: it.id, rect: (*bounds.get(i)?)? })
-            })
-            .collect();
-        let sum = format!("marks={}/{} bounds={}", marks.len(), self.issues.len(), if had_bounds { bounds.len().to_string() } else { "-".into() });
-        if !self.issues.is_empty() && sum != self.logged_marks {
-            out.push(Effect::Log(sum.clone()));
-            self.logged_marks = sum;
-        }
-        out.push(Effect::Marks(marks));
     }
 
     /// `result` = the engine's (corrected, notes), or its error message.
@@ -393,7 +324,7 @@ impl AutoChecker {
         self.merge(job.offset, &job.sentence, fixes);
         let end = job.offset + len16(&job.sentence);
         let first = self.issues.iter().find(|i| i.fix.start >= job.offset && i.fix.end <= end).map(|i| i.id);
-        if let (true, Some(first_id), true) = (job.popup, first, self.last_text == job.before) {
+        if let (Some(first_id), true) = (first, self.last_text == job.before) {
             self.loading = false; // the popup takes over the hint's place
             out.push(Effect::Sentence(SentenceFix { start: job.offset, original: job.sentence.clone(), corrected: corrected.into(), notes, first_id }));
         }
@@ -431,12 +362,9 @@ mod tests {
     struct Rig {
         auto: AutoChecker,
         snap: Snapshot,
-        popup: bool,
         type_during_check: bool,
         clock: u64,
         calls: usize,
-        explain: Option<bool>,
-        marks: Vec<Mark>,
         popups: Vec<SentenceFix>,
         loading: Vec<Option<(usize, usize)>>,
     }
@@ -454,16 +382,13 @@ mod tests {
         }
     }
 
-    fn rig(popup: bool, type_during_check: bool) -> Rig {
+    fn rig(type_during_check: bool) -> Rig {
         Rig {
             auto: AutoChecker::new(),
             snap: snap(S),
-            popup,
             type_during_check,
             clock: 0,
             calls: 0,
-            explain: None,
-            marks: vec![],
             popups: vec![],
             loading: vec![],
         }
@@ -471,22 +396,18 @@ mod tests {
 
     impl Rig {
         fn tick(&mut self) {
-            let asked = self.auto.asked();
-            let snap = Snapshot { bounds: Some(asked.iter().map(|_| Some(Rect { x: 1.0, y: 2.0, w: 3.0, h: 4.0 })).collect()), ..self.snap.clone() };
-            let fx = self.auto.on_snapshot(snap, &asked, self.clock, self.popup);
+            let fx = self.auto.on_snapshot(self.snap.clone(), self.clock);
             self.handle(fx);
         }
 
         fn handle(&mut self, fx: Vec<Effect>) {
             for e in fx {
                 match e {
-                    Effect::Marks(m) => self.marks = m,
                     Effect::Loading(at) => self.loading.push(at),
                     Effect::Sentence(f) => self.popups.push(f),
                     Effect::Log(_) => {}
                     Effect::Check(job) => {
                         self.calls += 1;
-                        self.explain = Some(job.popup);
                         if self.type_during_check {
                             self.snap = snap(&format!("{S} Next"));
                             self.tick();
@@ -515,29 +436,26 @@ mod tests {
     }
 
     #[test]
-    fn sentence_end_issue_underlined() {
-        let mut r = rig(false, false);
+    fn sentence_end_issue_found() {
+        let mut r = rig(false);
         r.steps(3);
         assert_eq!(r.originals(), ["dont"]);
-        assert_eq!(r.marks.len(), 1);
     }
 
     #[test]
-    fn one_poll_focus_blip_hides_marks_but_keeps_issues() {
-        let mut r = rig(false, false);
+    fn one_poll_focus_blip_keeps_issues() {
+        let mut r = rig(false);
         r.steps(3);
         r.snap.visible = Some(false);
         r.steps(1);
-        assert!(r.marks.is_empty());
         r.snap.visible = Some(true);
         r.steps(1);
         assert_eq!(r.auto.issues.len(), 1);
-        assert_eq!(r.marks.len(), 1);
     }
 
     #[test]
     fn retyped_sentence_reuses_cache_dismissed_fix_stays_gone() {
-        let mut r = rig(false, false);
+        let mut r = rig(false);
         r.steps(3);
         r.snap = snap("");
         r.steps(2);
@@ -553,20 +471,19 @@ mod tests {
     }
 
     #[test]
-    fn popup_mode_fix_with_reasons_opens_once_check_returns() {
-        let mut r = rig(true, false);
+    fn fix_with_reasons_opens_once_check_returns() {
+        let mut r = rig(false);
         r.steps(3);
         let got: Vec<_> = r.popups.iter().map(|p| (p.start, p.original.as_str(), p.corrected.as_str())).collect();
         assert_eq!(got, [(0, S, FIXED)]);
-        assert_eq!(r.explain, Some(true));
         r.auto.resolve_sentence(0, len16(S), None);
         r.steps(1);
         assert!(r.auto.issues.is_empty());
     }
 
     #[test]
-    fn popup_mode_accepted_sentence_is_not_checked_again() {
-        let mut r = rig(true, false);
+    fn accepted_sentence_is_not_checked_again() {
+        let mut r = rig(false);
         r.steps(3);
         r.snap = snap(FIXED);
         r.auto.resolve_sentence(0, len16(S), Some(FIXED));
@@ -576,58 +493,31 @@ mod tests {
     }
 
     #[test]
-    fn underline_fix_applied_patched_sentence_is_not_checked_again() {
-        let mut r = rig(false, false);
-        r.steps(3);
-        r.snap = snap(FIXED);
-        let id = r.auto.issues[0].id;
-        r.auto.applied(id);
-        r.steps(3);
-        assert_eq!(r.calls, 1);
-        assert!(r.auto.issues.is_empty());
-    }
-
-    #[test]
-    fn popup_mode_no_popup_once_typed_past_underline_stays() {
-        let mut r = rig(true, true);
+    fn typed_past_sentence_keeps_issue_without_popup() {
+        let mut r = rig(true);
         r.steps(3);
         assert!(r.popups.is_empty());
         assert_eq!(r.auto.issues.len(), 1);
     }
 
     #[test]
-    fn underline_mode_skips_reasons_and_never_pops_up() {
-        let mut r = rig(false, false);
-        r.steps(3);
-        assert!(r.popups.is_empty());
-        assert_eq!(r.explain, Some(false));
-    }
-
-    #[test]
-    fn popup_mode_loading_shows_then_popup_takes_its_place() {
-        let mut r = rig(true, false);
+    fn loading_shows_then_popup_takes_its_place() {
+        let mut r = rig(false);
         r.steps(3);
         assert_eq!(r.loading, [Some((0, len16(S)))]);
         assert_eq!(r.popups.len(), 1);
     }
 
     #[test]
-    fn popup_mode_typing_on_hides_loading_and_skips_popup() {
-        let mut r = rig(true, true);
+    fn typing_on_hides_loading_and_skips_popup() {
+        let mut r = rig(true);
         r.steps(3);
         assert_eq!(r.loading, [Some((0, len16(S))), None]);
     }
 
     #[test]
-    fn underline_mode_never_shows_loading() {
-        let mut r = rig(false, false);
-        r.steps(3);
-        assert!(r.loading.is_empty());
-    }
-
-    #[test]
     fn typed_period_is_checked_within_one_fast_poll() {
-        let mut r = rig(false, false);
+        let mut r = rig(false);
         r.step(250);
         r.step(250);
         assert_eq!(r.calls, 1);
@@ -635,7 +525,7 @@ mod tests {
 
     #[test]
     fn sentence_typed_past_before_it_settled_is_still_checked() {
-        let mut r = rig(false, false);
+        let mut r = rig(false);
         r.step(100);
         r.snap = snap(&format!("{S} Next"));
         r.step(100);

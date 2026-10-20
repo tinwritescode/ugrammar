@@ -1,10 +1,9 @@
-use crate::autocheck::{AutoChecker, Effect, Issue, Job, Mark, Rect, SentenceFix, Snapshot, POLL_MS};
+use crate::autocheck::{AutoChecker, Effect, Issue, Job, Rect, SentenceFix, Snapshot, POLL_MS};
 use crate::flow::{FixFlow, FixOutcome, FlowDeps};
 use crate::helper::{Helper, HelperEvent, Reply, Selection};
 use crate::ipc::{Choice, PopoverKind, PopoverPayload, Status, StatusKind, TrayState};
 use crate::ui;
 use serde_json::{json, Value};
-use std::collections::HashMap;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -16,10 +15,9 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut}
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_updater::UpdaterExt;
 use tokio::sync::{mpsc, oneshot};
-use ugrammar_core::badge::{badge_position, clamp_to_area, Area as BadgeArea, CaretRect, BADGE_SIZE};
 use ugrammar_core::engine::{CheckRequest, OpenAICompatibleEngine, OpenAIConfig, Tone};
 use ugrammar_core::insights::InsightStore;
-use ugrammar_core::settings::{AutoCheckMode, Mod, Settings, SettingsStore};
+use ugrammar_core::settings::{Mod, Settings, SettingsStore};
 
 pub const APP_NAME: &str = "ugrammar";
 const REPO_URL: &str = "https://github.com/tinwritescode/ugrammar";
@@ -29,7 +27,6 @@ const KEY_ACCOUNT: &str = "api-key";
 pub const POPOVER_W: f64 = 460.0;
 pub const TRAY_W: f64 = 344.0;
 const TRAY_MAX_H: f64 = 600.0;
-const KEEP_MS: u128 = 8000;
 const SECOND: Duration = Duration::from_secs(1);
 const UPDATE_EVERY: Duration = Duration::from_secs(6 * 3600);
 
@@ -102,26 +99,6 @@ struct Popover {
     payload: Option<PopoverPayload>,
 }
 
-/// One pooled strip window per slot; slot i is the window `underline-i`.
-#[derive(Default)]
-struct Underlines {
-    slots: Vec<Option<u64>>,
-    rects: HashMap<u64, Rect>,
-}
-
-#[derive(Default)]
-struct Badge {
-    generation: u64,
-    running: bool,
-    checking: bool,
-    visible: bool,
-    last: String,
-    pos: (f64, f64),
-    bundle_id: String,
-    last_move: Option<Instant>,
-    seen: bool,
-}
-
 #[derive(Default)]
 struct TrayPanel {
     hidden_at: Option<Instant>,
@@ -139,15 +116,12 @@ pub struct Ctx {
     auto: Mutex<AutoChecker>,
     auto_generation: AtomicU64,
     auto_running: AtomicBool,
-    underlines: Mutex<Underlines>,
     card_open: AtomicBool,
     loading_seq: AtomicU64,
     loading_shown: AtomicBool,
     flow: FixFlow,
     flow_anchor: Mutex<Option<Anchor>>,
-    badge: Mutex<Badge>,
     tray: Mutex<TrayPanel>,
-    resume_generation: AtomicU64,
     update: Mutex<Option<String>>,
     started: Instant,
 }
@@ -209,15 +183,12 @@ pub fn init(app: &AppHandle) -> mpsc::UnboundedReceiver<HelperEvent> {
         auto: Mutex::new(AutoChecker::new()),
         auto_generation: AtomicU64::new(0),
         auto_running: AtomicBool::new(false),
-        underlines: Mutex::default(),
         card_open: AtomicBool::new(false),
         loading_seq: AtomicU64::new(0),
         loading_shown: AtomicBool::new(false),
         flow: FixFlow::default(),
         flow_anchor: Mutex::new(None),
-        badge: Mutex::default(),
         tray: Mutex::default(),
-        resume_generation: AtomicU64::new(0),
         update: Mutex::new(None),
         started: Instant::now(),
     };
@@ -230,7 +201,7 @@ impl Ctx {
         self.store.lock().unwrap().get()
     }
 
-    /// Every settings write goes through here so status, auto-check and the badge follow it.
+    /// Every settings write goes through here so status and auto-check follow it.
     pub fn update_settings(&'static self, patch: Value) -> Settings {
         let cfg = {
             let mut s = self.store.lock().unwrap();
@@ -303,13 +274,6 @@ impl Ctx {
         let s = if s.kind == StatusKind::Idle && cfg.paused { Status::of(StatusKind::Paused) } else { s };
         *self.status.lock().unwrap() = s.clone();
         self.refresh_tray();
-        if matches!(s.kind, StatusKind::Paused | StatusKind::NeedsPermission) || !cfg.show_badge {
-            self.badge_stop();
-        } else {
-            self.badge_start();
-            self.badge.lock().unwrap().checking = s.kind == StatusKind::Checking;
-            self.badge_paint(false);
-        }
     }
 
     // ---------- Tray ----------
@@ -563,7 +527,7 @@ impl Ctx {
         *self.flow_anchor.lock().unwrap()
     }
 
-    /// Hotkey checks the selection; a badge click checks the whole field.
+    /// Hotkey checks the selection.
     pub async fn manual_check(&'static self, trigger: &str, select_all: bool) {
         debug(trigger);
         // A still-open popover counts as dismissed.
@@ -606,23 +570,6 @@ impl Ctx {
         self.popup_menu("popover", menu);
     }
 
-    pub fn on_badge_menu(&self) {
-        let bundle = self.badge.lock().unwrap().bundle_id.clone();
-        let a = &self.app;
-        let menu = (|| {
-            Menu::with_items(
-                a,
-                &[
-                    &MenuItem::with_id(a, "badge_hide", "Ẩn ở app này", !bundle.is_empty(), None::<&str>)?,
-                    &MenuItem::with_id(a, "badge_pause", "Tạm dừng 1 giờ", true, None::<&str>)?,
-                    &PredefinedMenuItem::separator(a)?,
-                    &MenuItem::with_id(a, "settings", "Settings…", true, None::<&str>)?,
-                ],
-            )
-        })();
-        self.popup_menu("badge", menu);
-    }
-
     fn popup_menu(&self, window: &str, menu: tauri::Result<Menu<Wry>>) {
         if let (Ok(m), Some(w)) = (menu, self.app.get_webview_window(window)) {
             let _ = w.popup_menu(&m);
@@ -638,22 +585,6 @@ impl Ctx {
             "ax" => open(AX_SETTINGS_URL),
             "settings" => self.open_panel().await,
             "quit" => self.app.exit(0),
-            "badge_hide" => {
-                let bundle = self.badge.lock().unwrap().bundle_id.clone();
-                let mut apps = self.settings().excluded_apps;
-                if !bundle.is_empty() && !apps.contains(&bundle) {
-                    apps.push(bundle);
-                    self.update_settings(json!({ "excludedApps": apps }));
-                }
-            }
-            "badge_pause" => {
-                self.update_settings(json!({ "paused": true }));
-                let generation = self.resume_generation.fetch_add(1, Ordering::SeqCst) + 1;
-                tokio::time::sleep(Duration::from_secs(3600)).await;
-                if self.resume_generation.load(Ordering::SeqCst) == generation {
-                    self.update_settings(json!({ "paused": false }));
-                }
-            }
             _ => {
                 if let Some(tone) = id.strip_prefix("tone_").and_then(parse_tone) {
                     self.rewrite(tone).await;
@@ -676,7 +607,7 @@ impl Ctx {
         }
     }
 
-    // ---------- Auto-check (underline in place + small card) ----------
+    // ---------- Auto-check (popup) ----------
 
     pub fn auto_start(&'static self) {
         if self.auto_running.swap(true, Ordering::SeqCst) {
@@ -691,8 +622,7 @@ impl Ctx {
             return;
         }
         self.auto_generation.fetch_add(1, Ordering::SeqCst);
-        let fx = self.auto.lock().unwrap().reset();
-        self.apply(fx);
+        self.auto.lock().unwrap().reset();
     }
 
     async fn snapshot(&self, excluded: &[String], ranges: Vec<Value>) -> Snapshot {
@@ -702,25 +632,17 @@ impl Ctx {
     async fn auto_tick(&'static self) {
         let s = self.settings();
         if !s.auto_check || s.paused {
-            let fx = self.auto.lock().unwrap().reset();
-            return self.apply(fx);
+            return self.auto.lock().unwrap().reset();
         }
-        let asked = self.auto.lock().unwrap().asked();
-        let ranges = asked.iter().map(|i| json!({ "loc": i.fix.start, "len": i.fix.end - i.fix.start })).collect();
-        let snap = self.snapshot(&s.excluded_apps, ranges).await;
+        let snap = self.snapshot(&s.excluded_apps, vec![]).await;
         let now = self.started.elapsed().as_millis() as u64;
-        let fx = self.auto.lock().unwrap().on_snapshot(snap, &asked, now, s.auto_check_mode == AutoCheckMode::Popup);
+        let fx = self.auto.lock().unwrap().on_snapshot(snap, now);
         self.apply(fx);
     }
 
     fn apply(&'static self, effects: Vec<Effect>) {
         for e in effects {
             match e {
-                Effect::Marks(m) => {
-                    if !self.card_open.load(Ordering::SeqCst) {
-                        self.set_underlines(m);
-                    }
-                }
                 Effect::Loading(at) => {
                     let seq = self.loading_seq.fetch_add(1, Ordering::SeqCst) + 1;
                     match at {
@@ -750,8 +672,8 @@ impl Ctx {
     }
 
     async fn auto_check(&self, job: &Job) -> Result<(String, Vec<String>), String> {
-        // Reasons cost ~1.5 s; only the popup shows them up front.
-        let explain = job.popup && self.settings().explain;
+        // Reasons cost ~1.5 s; the popup shows them up front.
+        let explain = self.settings().explain;
         // Background: slow gateways need more than the 10s hotkey default.
         self.check_text(job.sentence.clone(), explain, None, 30000).await
     }
@@ -766,7 +688,7 @@ impl Ctx {
             return;
         }
         // Sentence end, by the caret.
-        let anchor = self.range_anchor(start + length.saturating_sub(1), length.min(1), None).await;
+        let anchor = self.range_anchor(start + length.saturating_sub(1), length.min(1)).await;
         if seq != self.loading_seq.load(Ordering::SeqCst) || self.blocked() {
             return;
         }
@@ -775,24 +697,16 @@ impl Ctx {
     }
 
     /// Anchor below a text range (above when there is no room), from fresh AX bounds.
-    async fn range_anchor(&self, loc: usize, len: usize, known: Option<Rect>) -> Option<Anchor> {
-        let r = match known {
-            Some(r) => Some(r),
-            None => {
-                let snap = self.snapshot(&self.settings().excluded_apps, vec![json!({ "loc": loc, "len": len })]).await;
-                if snap.ok && snap.visible == Some(true) {
-                    snap.bounds.and_then(|b| b.into_iter().next().flatten())
-                } else {
-                    None
-                }
-            }
-        };
-        r.map(below_rect)
+    async fn range_anchor(&self, loc: usize, len: usize) -> Option<Anchor> {
+        let snap = self.snapshot(&self.settings().excluded_apps, vec![json!({ "loc": loc, "len": len })]).await;
+        if !snap.ok || snap.visible != Some(true) {
+            return None;
+        }
+        snap.bounds.and_then(|b| b.into_iter().next().flatten()).map(below_rect)
     }
 
     async fn issue_anchor(&self, it: &Issue) -> Option<Anchor> {
-        let known = self.underlines.lock().unwrap().rects.get(&it.id).copied();
-        self.range_anchor(it.fix.start, it.fix.end - it.fix.start, known).await
+        self.range_anchor(it.fix.start, it.fix.end - it.fix.start).await
     }
 
     /// Writes an accepted auto-check fix back over `original` and records it; says why when it cannot.
@@ -834,172 +748,6 @@ impl Ctx {
         let applied = choice == Choice::Accept && self.write_fix(fix.start, len, &fix.original, &fix.corrected, &fix.notes).await;
         self.auto.lock().unwrap().resolve_sentence(fix.start, len, applied.then_some(fix.corrected.as_str()));
         self.card_open.store(false, Ordering::SeqCst);
-    }
-
-    pub async fn open_issue_card(&'static self, id: u64) {
-        let (it, app_name) = {
-            let a = self.auto.lock().unwrap();
-            (a.issue(id).cloned(), a.app_name.clone())
-        };
-        let Some(it) = it else { return };
-        if self.card_open.swap(true, Ordering::SeqCst) {
-            return;
-        }
-        let f = &it.fix;
-        let notes: Vec<String> = f.reason.iter().cloned().collect();
-        let anchor = self.issue_anchor(&it).await;
-        let choice = self.show_diff(PopoverPayload::diff(&f.original, &f.replacement, app_name, notes.clone()), anchor).await;
-        if choice == Choice::Accept && self.write_fix(f.start, f.end - f.start, &f.original, &f.replacement, &notes).await {
-            self.auto.lock().unwrap().applied(id);
-        } else {
-            self.auto.lock().unwrap().dismiss(id);
-        }
-        self.card_open.store(false, Ordering::SeqCst);
-    }
-
-    /// Show exactly these marks (screen coords of the word); every other strip is hidden.
-    fn set_underlines(&'static self, marks: Vec<Mark>) {
-        let plan: Vec<(usize, Option<Rect>)> = {
-            let mut u = self.underlines.lock().unwrap();
-            u.rects = marks.iter().map(|m| (m.id, m.rect)).collect();
-            for s in u.slots.iter_mut() {
-                if s.is_some_and(|id| !marks.iter().any(|m| m.id == id)) {
-                    *s = None;
-                }
-            }
-            for m in &marks {
-                if u.slots.contains(&Some(m.id)) {
-                    continue;
-                }
-                match u.slots.iter().position(Option::is_none) {
-                    Some(i) => u.slots[i] = Some(m.id),
-                    None => u.slots.push(Some(m.id)),
-                }
-            }
-            u.slots.iter().enumerate().map(|(i, s)| (i, s.and_then(|id| u.rects.get(&id).copied()))).collect()
-        };
-        let _ = self.app.run_on_main_thread(move || {
-            for (i, rect) in plan {
-                let label = format!("underline-{i}");
-                let Some(r) = rect else {
-                    ui::hide(&self.app, &label);
-                    continue;
-                };
-                if self.app.get_webview_window(&label).is_none() && ui::float_panel(&self.app, &label, "underline.html", 40.0, 8.0, false).is_err() {
-                    continue;
-                }
-                const STRIP: f64 = 8.0;
-                let area = ui::screen_near(&self.app, r.x, r.y).bounds;
-                let width = r.w.round().min(area.x + area.w - r.x).max(12.0);
-                ui::resize(&self.app, &label, width, STRIP);
-                ui::place(&self.app, &label, r.x, r.y + r.h - STRIP + 1.0);
-                ui::show_panel(&self.app, &label);
-            }
-        });
-    }
-
-    pub fn underline_clicked(&'static self, label: &str) {
-        let slot = label.strip_prefix("underline-").and_then(|s| s.parse::<usize>().ok());
-        let id = slot.and_then(|i| self.underlines.lock().unwrap().slots.get(i).copied().flatten());
-        if let Some(id) = id {
-            tauri::async_runtime::spawn(self.open_issue_card(id));
-        }
-    }
-
-    // ---------- Badge ----------
-
-    fn badge_start(&'static self) {
-        let generation = {
-            let mut b = self.badge.lock().unwrap();
-            if b.running {
-                return;
-            }
-            b.running = true;
-            b.generation += 1;
-            b.generation
-        };
-        spawn_poll(Duration::from_millis(400), move || self.badge.lock().unwrap().generation == generation, move || self.badge_tick());
-    }
-
-    fn badge_stop(&self) {
-        let mut b = self.badge.lock().unwrap();
-        if b.running {
-            b.running = false;
-            b.generation += 1;
-        }
-        drop(b);
-        self.badge_hide();
-    }
-
-    fn badge_hide(&self) {
-        let mut b = self.badge.lock().unwrap();
-        if b.visible {
-            b.visible = false;
-            ui::hide(&self.app, "badge");
-        }
-    }
-
-    fn badge_paint(&self, typing: bool) {
-        let cls = {
-            let b = self.badge.lock().unwrap();
-            if !b.visible {
-                return;
-            }
-            if b.checking {
-                "checking"
-            } else if typing {
-                "typing"
-            } else {
-                ""
-            }
-        };
-        if let Some(w) = self.app.get_webview_window("badge") {
-            let _ = w.eval(format!("document.getElementById(\"d\").className={}", json!(cls)));
-        }
-    }
-
-    async fn badge_tick(&self) {
-        let r = self.helper.request("caret", json!({ "excluded": self.settings().excluded_apps }), Duration::from_millis(1500)).await;
-        let caret = (r["ok"] == true && r["visible"] == true)
-            .then(|| serde_json::from_value::<CaretRect>(r.clone()).ok())
-            .flatten();
-        let Some(caret) = caret else {
-            self.badge.lock().unwrap().seen = false;
-            return self.badge_hide();
-        };
-        let pos = badge_position(caret);
-        let area = ui::screen_near(&self.app, pos.x, pos.y).work;
-        let p = clamp_to_area(pos, BadgeArea { x: area.x, y: area.y, width: area.w, height: area.h });
-        let (cx, cy) = ui::cursor(&self.app);
-        let (moved, show) = {
-            let mut b = self.badge.lock().unwrap();
-            b.bundle_id = r["bundleId"].as_str().unwrap_or_default().to_string();
-            let key = format!("{},{},{},{}", caret.x, caret.y, caret.w, caret.h);
-            let moved = key != b.last;
-            b.last = key;
-            // Show only after the first change in a field (i.e. typing), and for a few seconds after the last one.
-            if (moved && b.seen) || r["selLen"].as_f64().unwrap_or(0.0) > 0.0 {
-                b.last_move = Some(Instant::now());
-            }
-            b.seen = true;
-            let (bx, by) = b.pos;
-            let hovering = b.visible && cx >= bx && cx <= bx + BADGE_SIZE && cy >= by && cy <= by + BADGE_SIZE;
-            let recent = b.last_move.is_some_and(|t| t.elapsed().as_millis() <= KEEP_MS);
-            let show = b.checking || hovering || recent;
-            if show {
-                b.pos = (p.x, p.y);
-            }
-            (moved, show)
-        };
-        if !show {
-            return self.badge_hide();
-        }
-        ui::place(&self.app, "badge", p.x, p.y);
-        let was = std::mem::replace(&mut self.badge.lock().unwrap().visible, true);
-        if !was {
-            ui::show_panel(&self.app, "badge");
-        }
-        self.badge_paint(moved);
     }
 
     // ---------- Update ----------
