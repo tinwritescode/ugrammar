@@ -21,6 +21,7 @@ tauri-plugin-global-shortcut = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-single-instance = "2"
+tauri-plugin-deep-link = "2"
 objc2-app-kit = { version = "0.3.2", features = ["NSEvent", "NSScreen"] }
 objc2-foundation = "0.3.2"
 objc2 = "0.6.5"

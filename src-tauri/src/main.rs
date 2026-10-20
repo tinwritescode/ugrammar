@@ -1,6 +1,7 @@
 mod app;
 mod autocheck;
 mod commands;
+mod deeplink;
 mod flow;
 mod helper;
 mod ipc;
@@ -20,6 +21,7 @@ fn main() {
                 tauri::async_runtime::spawn(c.open_panel());
             }
         }))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_nspanel::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -88,6 +90,7 @@ fn main() {
                 tauri::async_runtime::spawn(async move { ctx().on_menu(&id).await });
             });
             tauri::async_runtime::spawn(ctx().start());
+            deeplink::register(app);
             Ok(())
         })
         .run(tauri::generate_context!())

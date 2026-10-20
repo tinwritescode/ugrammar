@@ -40,6 +40,13 @@
     "createUpdaterArtifacts": false
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "ugrammar"
+        ]
+      }
+    },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENCQkVBNzEzNEJCNEQzQzAKUldUQTA3UkxFNmUreXdheVd5ZVUveUtDcnBPK1VpNm13VFR5OVJBa21pdjJOZ25uTFczcE8zRU4K",
       "endpoints": [
