@@ -19,7 +19,7 @@ for (const c of "ABCDEFGHIJKLMNOPQRSTUVWXYZ") keySel.add(new Option(c, c));
 
 const save = (patch: Partial<Settings>) => void proofy.saveSettings(patch);
 
-type SwitchKey = "quickFix" | "explain" | "showBadge";
+type SwitchKey = "quickFix" | "explain";
 
 function host(endpoint: string) {
   try { return new URL(endpoint).host; } catch { return endpoint; }
@@ -97,7 +97,7 @@ $("github").onclick = (e) => {
 };
 void proofy.appVersion().then((v) => ($("version").textContent = `v${v}`));
 for (const b of $("mode").querySelectorAll<HTMLButtonElement>("button")) {
-  b.onclick = () => save(b.dataset.mode === "off" ? { autoCheck: false } : { autoCheck: true, autoCheckMode: b.dataset.mode === "popup" ? "popup" : "underline" });
+  b.onclick = () => save(b.dataset.mode === "off" ? { autoCheck: false } : { autoCheck: true, autoCheckMode: "popup" });
 }
 for (const b of document.querySelectorAll<HTMLButtonElement>("[data-tone]")) {
   b.onclick = () => proofy.trayAction(b.dataset.tone === "friendly" ? "friendly" : b.dataset.tone === "short" ? "short" : "formal");

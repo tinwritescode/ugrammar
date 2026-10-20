@@ -75,7 +75,7 @@ impl Default for Settings {
             explain: true,
             show_badge: false,
             auto_check: false,
-            auto_check_mode: AutoCheckMode::Underline,
+            auto_check_mode: AutoCheckMode::Popup,
             quick_fix: false,
             explain_lang: "Vietnamese".into(),
             first_run_acknowledged: false,
@@ -129,9 +129,9 @@ pub fn normalize_settings(raw: &Value) -> Settings {
         hotkey: hotkey(r.get("hotkey")).unwrap_or(d.hotkey),
         paused: is("paused", true),
         explain: !is("explain", false),
-        show_badge: is("showBadge", true),
+        show_badge: false, // retired: no badge, no underline
         auto_check: is("autoCheck", true),
-        auto_check_mode: if r.get("autoCheckMode").and_then(Value::as_str) == Some("popup") { AutoCheckMode::Popup } else { AutoCheckMode::Underline },
+        auto_check_mode: AutoCheckMode::Popup,
         quick_fix: is("quickFix", true),
         explain_lang: str_or("explainLang", d.explain_lang),
         first_run_acknowledged: is("firstRunAcknowledged", true),
@@ -299,7 +299,7 @@ mod tests {
         let dir = TempDir::new();
         let mut s = SettingsStore::new(dir.path());
         s.update(json!({ "excludedApps": [], "hotkey": { "key": "k", "mods": ["cmd"] } })).unwrap();
-        let expected = "{\n  \"endpoint\": \"http://localhost:20128/v1\",\n  \"model\": \"xpiki/gpt-6.1-sol\",\n  \"timeoutMs\": 10000,\n  \"dictionary\": [],\n  \"excludedApps\": [],\n  \"hotkey\": {\n    \"key\": \"K\",\n    \"mods\": [\n      \"cmd\"\n    ]\n  },\n  \"paused\": false,\n  \"explain\": true,\n  \"showBadge\": false,\n  \"autoCheck\": false,\n  \"autoCheckMode\": \"underline\",\n  \"quickFix\": false,\n  \"explainLang\": \"Vietnamese\",\n  \"firstRunAcknowledged\": false\n}\n";
+        let expected = "{\n  \"endpoint\": \"http://localhost:20128/v1\",\n  \"model\": \"xpiki/gpt-6.1-sol\",\n  \"timeoutMs\": 10000,\n  \"dictionary\": [],\n  \"excludedApps\": [],\n  \"hotkey\": {\n    \"key\": \"K\",\n    \"mods\": [\n      \"cmd\"\n    ]\n  },\n  \"paused\": false,\n  \"explain\": true,\n  \"showBadge\": false,\n  \"autoCheck\": false,\n  \"autoCheckMode\": \"popup\",\n  \"quickFix\": false,\n  \"explainLang\": \"Vietnamese\",\n  \"firstRunAcknowledged\": false\n}\n";
         assert_eq!(fs::read_to_string(dir.path().join("settings.json")).unwrap(), expected);
         assert!(!dir.path().join("settings.json.tmp").exists());
     }
@@ -321,11 +321,9 @@ mod tests {
     }
 
     #[test]
-    fn show_badge_defaults_off_only_true_enables() {
-        assert!(!Settings::default().show_badge);
-        assert!(!normalize_settings(&json!({})).show_badge);
-        assert!(!normalize_settings(&json!({ "showBadge": "yes" })).show_badge);
-        assert!(normalize_settings(&json!({ "showBadge": true })).show_badge);
+    fn retired_badge_and_underline_are_always_off() {
+        assert!(!normalize_settings(&json!({ "showBadge": true })).show_badge);
+        assert_eq!(normalize_settings(&json!({ "autoCheckMode": "underline" })).auto_check_mode, AutoCheckMode::Popup);
     }
 
     #[test]
