@@ -39,11 +39,16 @@ func axString(_ el: AXUIElement, _ attr: String) -> String? {
     return v as? String
 }
 
+/// Read on the main thread: from the worker, the cached value goes stale while the idle main run loop sleeps.
+func frontmostApp() -> NSRunningApplication? {
+    DispatchQueue.main.sync { NSWorkspace.shared.frontmostApplication }
+}
+
 /// Focused element of the frontmost app (or of `pid`), not system-wide: our own popover must never be mistaken for the target.
 var axEnabledPids = Set<pid_t>()
 
 func focusedElement(pid: pid_t? = nil) -> AXUIElement? {
-    guard let p = pid ?? NSWorkspace.shared.frontmostApplication?.processIdentifier else { return nil }
+    guard let p = pid ?? frontmostApp()?.processIdentifier else { return nil }
     let appEl = AXUIElementCreateApplication(p)
     if !axEnabledPids.contains(p) { // Chromium/Electron apps (Claude, Slack, Chrome) only build their AX tree on request
         axEnabledPids.insert(p)
@@ -125,7 +130,7 @@ func clipboardPaste(_ text: String) {
 
 func handleRead(_ id: Any?, _ msg: [String: Any]) {
     guard axTrusted() else { return reply(id, false, ["error": "accessibility_not_trusted"]) }
-    guard let app = NSWorkspace.shared.frontmostApplication else { return reply(id, false, ["error": "no_frontmost_app"]) }
+    guard let app = frontmostApp() else { return reply(id, false, ["error": "no_frontmost_app"]) }
     let bundle = app.bundleIdentifier ?? ""
     let appInfo: [String: Any] = ["bundleId": bundle, "appName": app.localizedName ?? "", "pid": Int(app.processIdentifier)]
     let excluded = (msg["excluded"] as? [String]) ?? []
@@ -155,7 +160,7 @@ func handleRead(_ id: Any?, _ msg: [String: Any]) {
 
 /// Where to anchor the typing badge: caret bounds if the app reports them, else the focused text element's frame.
 func handleCaret(_ id: Any?, _ msg: [String: Any]) {
-    guard axTrusted(), let app = NSWorkspace.shared.frontmostApplication else { return reply(id, true, ["visible": false]) }
+    guard axTrusted(), let app = frontmostApp() else { return reply(id, true, ["visible": false]) }
     let bundle = app.bundleIdentifier ?? ""
     if ((msg["excluded"] as? [String]) ?? []).contains(bundle) { return reply(id, true, ["visible": false]) }
     guard let el = focusedElement(), !isSecure(el) else { return reply(id, true, ["visible": false]) }
@@ -246,7 +251,7 @@ func textLeaves(_ root: AXUIElement, _ value: String) -> [(el: AXUIElement, star
 
 /// Text, caret and per-range bounds of the focused field, for auto-check and underlines.
 func handleSnapshot(_ id: Any?, _ msg: [String: Any]) {
-    guard axTrusted(), let app = NSWorkspace.shared.frontmostApplication else { return reply(id, true, ["visible": false]) }
+    guard axTrusted(), let app = frontmostApp() else { return reply(id, true, ["visible": false]) }
     let bundle = app.bundleIdentifier ?? ""
     if ((msg["excluded"] as? [String]) ?? []).contains(bundle) { return reply(id, true, ["visible": false]) }
     guard let el = focusedElement() else { return reply(id, true, ["visible": false, "reason": "no_focus"]) }
@@ -278,7 +283,7 @@ func handleReplaceRange(_ id: Any?, _ msg: [String: Any]) {
     guard let loc = msg["loc"] as? Int, let len = msg["len"] as? Int, let text = msg["text"] as? String, let expect = msg["expect"] as? String else {
         return reply(id, false, ["error": "bad_args"])
     }
-    if let pid = msg["pid"] as? Int, NSWorkspace.shared.frontmostApplication?.processIdentifier != pid_t(pid) {
+    if let pid = msg["pid"] as? Int, frontmostApp()?.processIdentifier != pid_t(pid) {
         return reply(id, false, ["error": "focus_changed"])
     }
     guard let el = focusedElement(), !isSecure(el), let value = axString(el, kAXValueAttribute as String) else {
@@ -330,7 +335,7 @@ func handleWrite(_ id: Any?, _ msg: [String: Any]) {
     guard axTrusted() else { return reply(id, false, ["error": "accessibility_not_trusted"]) }
     guard let text = msg["text"] as? String else { return reply(id, false, ["error": "missing_text"]) }
     if let pid = msg["pid"] as? Int,
-       NSWorkspace.shared.frontmostApplication?.processIdentifier != pid_t(pid) {
+       frontmostApp()?.processIdentifier != pid_t(pid) {
         return reply(id, false, ["error": "focus_changed"])
     }
     let method = (msg["method"] as? String) ?? "ax"
