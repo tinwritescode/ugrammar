@@ -42,6 +42,7 @@ fn main() {
             commands::popover_action,
             commands::popover_resize,
             commands::popover_current,
+            commands::check_update_now,
             commands::clear_insights,
             commands::save_settings,
             commands::set_api_key,

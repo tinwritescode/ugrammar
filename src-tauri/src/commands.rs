@@ -26,6 +26,11 @@ pub async fn popover_current() -> Option<PopoverPayload> {
 }
 
 #[tauri::command]
+pub async fn check_update_now() {
+    tauri::async_runtime::spawn(ctx().check_update_now());
+}
+
+#[tauri::command]
 pub async fn clear_insights() {
     let c = ctx();
     c.clear_insights();

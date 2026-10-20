@@ -11,6 +11,7 @@ export const proofy: ProofyApi = {
   },
   popoverAction: (action) => void invoke("popover_action", { action }),
   popoverResize: (height, width) => void invoke("popover_resize", { height, width }),
+  checkUpdate: () => void invoke("check_update_now"),
   clearInsights: () => invoke("clear_insights"),
   saveSettings: (patch) => invoke("save_settings", { patch }),
   setApiKey: (key) => invoke("set_api_key", { key }),

@@ -1,7 +1,7 @@
 use crate::autocheck::{AutoChecker, Effect, Issue, Job, Rect, SentenceFix, Snapshot, POLL_MS};
 use crate::flow::{FixFlow, FixOutcome, FlowDeps};
 use crate::helper::{Helper, HelperEvent, Reply, Selection};
-use crate::ipc::{Choice, PopoverKind, PopoverPayload, Status, StatusKind, TrayState};
+use crate::ipc::{Choice, PopoverKind, PopoverPayload, Status, StatusKind, TrayState, UpdateNote};
 use crate::ui;
 use serde_json::{json, Value};
 use std::io::Write as _;
@@ -123,6 +123,7 @@ pub struct Ctx {
     flow_anchor: Mutex<Option<Anchor>>,
     tray: Mutex<TrayPanel>,
     update: Mutex<Option<String>>,
+    update_note: Mutex<Option<UpdateNote>>,
     started: Instant,
 }
 
@@ -190,6 +191,7 @@ pub fn init(app: &AppHandle) -> mpsc::UnboundedReceiver<HelperEvent> {
         flow_anchor: Mutex::new(None),
         tray: Mutex::default(),
         update: Mutex::new(None),
+        update_note: Mutex::new(None),
         started: Instant::now(),
     };
     let _ = CTX.set(ctx);
@@ -289,6 +291,7 @@ impl Ctx {
             insights: self.insights.lock().unwrap().top(5),
             has_api_key,
             update: self.update.lock().unwrap().clone(),
+            update_note: *self.update_note.lock().unwrap(),
         }
     }
 
@@ -348,6 +351,7 @@ impl Ctx {
         }
         ui::hide(&self.app, "tray");
         self.tray.lock().unwrap().hidden_at = Some(Instant::now());
+        *self.update_note.lock().unwrap() = None;
     }
 
     pub async fn toggle_tray(&'static self) {
@@ -752,27 +756,60 @@ impl Ctx {
 
     // ---------- Update ----------
 
-    /// Installs a newer release over this bundle; it runs from the next launch.
+    /// Checks, downloads and installs a newer release over this bundle; it runs from the next launch.
+    /// `on_found` runs once a newer release is known, before its download starts.
+    async fn install_update(&'static self, on_found: impl FnOnce()) -> Result<Option<String>, tauri_plugin_updater::Error> {
+        let Some(u) = self.app.updater()?.check().await? else { return Ok(None) };
+        on_found();
+        u.download_and_install(|_, _| {}, || {}).await?;
+        Ok(Some(u.version))
+    }
+
+    fn update_installed(&'static self, v: String) {
+        debug(&format!("update installed {v}"));
+        self.notify(&format!("Version {v} is installed. Restart {APP_NAME} from the menu bar to use it."));
+        *self.update.lock().unwrap() = Some(v);
+        self.refresh_tray();
+    }
+
+    fn set_update_note(&'static self, note: Option<UpdateNote>) {
+        *self.update_note.lock().unwrap() = note;
+        self.refresh_tray();
+    }
+
     async fn check_update(&'static self) {
         // A dev binary is not inside an .app bundle to replace.
         if cfg!(debug_assertions) || self.update.lock().unwrap().is_some() {
             return;
         }
-        let installed = async {
-            let Some(u) = self.app.updater()?.check().await? else { return Ok(None) };
-            u.download_and_install(|_, _| {}, || {}).await?;
-            Ok::<_, tauri_plugin_updater::Error>(Some(u.version))
-        };
-        match installed.await {
-            Ok(Some(v)) => {
-                debug(&format!("update installed {v}"));
-                self.notify(&format!("Version {v} is installed. Restart {APP_NAME} from the menu bar to use it."));
-                *self.update.lock().unwrap() = Some(v);
-                self.refresh_tray();
-            }
+        match self.install_update(|| {}).await {
+            Ok(Some(v)) => self.update_installed(v),
             Ok(None) => debug("update none"),
             Err(e) => debug(&format!("update failed: {e}")),
         }
+    }
+
+    /// The tray's "Check for updates" button: same install as the timer, with the outcome shown in the tray.
+    pub async fn check_update_now(&'static self) {
+        if cfg!(debug_assertions) {
+            return self.set_update_note(Some(UpdateNote::Unsupported));
+        }
+        if self.update.lock().unwrap().is_some() {
+            return; // already installed; the banner asks for a restart
+        }
+        self.set_update_note(Some(UpdateNote::Checking));
+        let note = match self.install_update(|| self.set_update_note(Some(UpdateNote::Downloading))).await {
+            Ok(Some(v)) => {
+                self.update_installed(v);
+                None
+            }
+            Ok(None) => Some(UpdateNote::UpToDate),
+            Err(e) => {
+                debug(&format!("update failed: {e}"));
+                Some(UpdateNote::Failed)
+            }
+        };
+        self.set_update_note(note);
     }
 
     // ---------- Lifecycle ----------

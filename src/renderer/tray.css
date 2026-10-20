@@ -46,6 +46,8 @@ button.icon svg { width: 18px; height: 18px; }
 .fresh { background: var(--income-bg); color: var(--income); }
 
 .label { display: flex; align-items: center; gap: 6px; padding: 4px 4px 0; font-size: 12px; color: var(--muted); }
+.updateCheck { display: flex; align-items: center; gap: 8px; padding: 0 4px; }
+.updateCheck #updateNote { flex: 1; min-width: 0; }
 
 .seg { display: flex; padding: 4px; border-radius: 999px; background: var(--surface); }
 .seg button { flex: 1; height: 36px; padding: 0 8px; border: 0; background: transparent; color: var(--muted); font-weight: 500; }

@@ -1,6 +1,6 @@
 import { proofy } from "./bridge";
 import { el } from "./dom";
-import type { Hotkey, Settings, TrayState } from "../shared/ipc";
+import type { Hotkey, Settings, TrayState, UpdateNote } from "../shared/ipc";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const panel = $("panel");
@@ -36,6 +36,33 @@ function renderTags(id: string, items: string[], onRemove: (v: string) => void) 
     el("span", { className: "tag" }, el("span", {}, t), el("button", { title: "Xoá", onclick: () => onRemove(t) }, "×"))));
 }
 
+let appVersion = "";
+
+const UPDATE_BUTTON: Record<UpdateNote, string> = {
+  checking: "Đang kiểm tra…",
+  downloading: "Đang tải bản mới…",
+  up_to_date: "Kiểm tra cập nhật",
+  failed: "Kiểm tra cập nhật",
+  unsupported: "Kiểm tra cập nhật",
+};
+
+function updateNoteText(note: UpdateNote): string {
+  switch (note) {
+    case "up_to_date": return `Bạn đang dùng bản mới nhất (v${appVersion})`;
+    case "failed": return "Không kiểm tra được cập nhật. Thử lại sau.";
+    case "unsupported": return "Chỉ kiểm tra được trong bản đã đóng gói.";
+    default: return "";
+  }
+}
+
+function renderUpdateCheck(note?: UpdateNote) {
+  const busy = note === "checking" || note === "downloading";
+  const button = $<HTMLButtonElement>("checkUpdate");
+  button.disabled = busy;
+  button.textContent = note ? UPDATE_BUTTON[note] : "Kiểm tra cập nhật";
+  $("updateNote").textContent = note ? updateNoteText(note) : "";
+}
+
 function render(s: TrayState) {
   state = s;
   const cfg = s.settings;
@@ -47,6 +74,7 @@ function render(s: TrayState) {
   $("perm").hidden = s.status !== "needs_permission";
   $("update").hidden = !s.update;
   $("updateText").textContent = `Bản ${s.update ?? ""} đã cài xong.`;
+  renderUpdateCheck(s.updateNote);
   const mode = cfg.autoCheck ? "popup" : "off";
   for (const b of $("mode").querySelectorAll<HTMLButtonElement>("button")) b.classList.toggle("on", b.dataset.mode === mode);
   for (const c of document.querySelectorAll<HTMLInputElement>(".switch")) c.checked = cfg[c.dataset.key as SwitchKey];
@@ -95,7 +123,11 @@ $("github").onclick = (e) => {
   e.preventDefault();
   proofy.trayAction("github");
 };
-void proofy.appVersion().then((v) => ($("version").textContent = `v${v}`));
+void proofy.appVersion().then((v) => {
+  appVersion = v;
+  $("version").textContent = `v${v}`;
+});
+$("checkUpdate").onclick = () => proofy.checkUpdate();
 for (const b of $("mode").querySelectorAll<HTMLButtonElement>("button")) {
   b.onclick = () => save(b.dataset.mode === "off" ? { autoCheck: false } : { autoCheck: true });
 }

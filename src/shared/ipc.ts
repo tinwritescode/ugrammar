@@ -47,7 +47,10 @@ export interface TrayState {
   insights: Insight[];
   hasApiKey: boolean;
   update?: string;
+  updateNote?: UpdateNote;
 }
+
+export type UpdateNote = "checking" | "downloading" | "up_to_date" | "failed" | "unsupported";
 
 export type TrayAction = "quit" | "ax" | "github" | "restart" | Tone;
 
@@ -60,6 +63,7 @@ export interface ProofyApi {
   onPopover(cb: (p: PopoverPayload) => void): void;
   popoverAction(action: "accept" | "dismiss"): void;
   popoverResize(height: number, width?: number): void;
+  checkUpdate(): void;
   clearInsights(): Promise<void>;
   saveSettings(patch: Partial<Settings>): Promise<void>;
   setApiKey(key: string): Promise<void>;

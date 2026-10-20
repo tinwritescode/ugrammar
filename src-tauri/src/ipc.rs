@@ -76,6 +76,17 @@ impl Status {
     }
 }
 
+/// Result of the last manual "check for updates", shown under its button until the tray closes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdateNote {
+    Checking,
+    Downloading,
+    UpToDate,
+    Failed,
+    Unsupported,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrayState {
@@ -89,4 +100,6 @@ pub struct TrayState {
     /// Version installed in place, waiting for a restart.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub update: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub update_note: Option<UpdateNote>,
 }
