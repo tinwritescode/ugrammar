@@ -519,10 +519,10 @@ impl Ctx {
     }
 
     /// Manual checks: popovers sit by the text being fixed.
-    pub async fn run_flow(&'static self, select_all: bool, tone: Option<Tone>) -> FixOutcome {
+    pub async fn run_flow(&'static self, tone: Option<Tone>) -> FixOutcome {
         let anchor = self.selection_anchor().await;
         *self.flow_anchor.lock().unwrap() = anchor;
-        let outcome = self.flow.run(self, select_all, tone).await;
+        let outcome = self.flow.run(self, tone).await;
         *self.flow_anchor.lock().unwrap() = None;
         outcome
     }
@@ -532,18 +532,18 @@ impl Ctx {
     }
 
     /// Hotkey checks the selection.
-    pub async fn manual_check(&'static self, trigger: &str, select_all: bool) {
+    pub async fn manual_check(&'static self, trigger: &str) {
         debug(trigger);
         // A still-open popover counts as dismissed.
         self.close_popover(Choice::Dismiss);
         tokio::task::yield_now().await;
-        let outcome = self.run_flow(select_all, None).await;
+        let outcome = self.run_flow(None).await;
         let st = self.status();
         debug(&format!("outcome={outcome:?} status={:?}{}", st.kind, st.message.map(|m| format!(" ({m})")).unwrap_or_default()));
     }
 
     async fn rewrite(&'static self, tone: Tone) {
-        debug(&format!("tone={tone:?} outcome={:?}", self.run_flow(false, Some(tone)).await));
+        debug(&format!("tone={tone:?} outcome={:?}", self.run_flow(Some(tone)).await));
     }
 
     pub async fn register_hotkey(&self) {
@@ -601,7 +601,7 @@ impl Ctx {
         while let Some(e) = rx.recv().await {
             match e {
                 HelperEvent::Hotkey => {
-                    tauri::async_runtime::spawn(self.manual_check("hotkey", false));
+                    tauri::async_runtime::spawn(self.manual_check("hotkey"));
                 }
                 HelperEvent::Hotkey2 => {
                     let _ = self.app.run_on_main_thread(move || self.on_hotkey2());
@@ -869,8 +869,8 @@ impl FlowDeps for Ctx {
         Ctx::settings(self)
     }
 
-    async fn read_selection(&self, excluded: &[String], select_all: bool) -> Selection {
-        let r: Selection = self.helper.request_as("read", json!({ "excluded": excluded, "selectAll": select_all }), 8 * SECOND).await;
+    async fn read_selection(&self, excluded: &[String]) -> Selection {
+        let r: Selection = self.helper.request_as("read", json!({ "excluded": excluded }), 8 * SECOND).await;
         debug(&format!("read app={} {}", r.bundle_id.as_deref().unwrap_or("-"), outcome(r.ok, &r.method, &r.error)));
         r
     }

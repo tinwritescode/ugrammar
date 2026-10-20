@@ -22,7 +22,7 @@ pub enum FixOutcome {
 
 pub trait FlowDeps {
     fn settings(&self) -> Settings;
-    async fn read_selection(&self, excluded: &[String], select_all: bool) -> Selection;
+    async fn read_selection(&self, excluded: &[String]) -> Selection;
     async fn write_selection(&self, text: &str, pid: Option<i64>, method: Option<&str>) -> Reply;
     /// Engine call with the settings' dictionary and explain options; Err carries the message.
     async fn check(&self, text: &str, tone: Option<Tone>) -> Result<(String, Vec<String>), String>;
@@ -72,8 +72,7 @@ impl FixFlow {
         d.set_status(Status::of(if d.settings().paused { StatusKind::Paused } else { StatusKind::Idle }));
     }
 
-    /// `select_all`: checks the whole field when nothing is selected.
-    pub async fn run<D: FlowDeps>(&self, d: &D, select_all: bool, tone: Option<Tone>) -> FixOutcome {
+    pub async fn run<D: FlowDeps>(&self, d: &D, tone: Option<Tone>) -> FixOutcome {
         let s = d.settings();
         if s.paused {
             return FixOutcome::Paused;
@@ -84,7 +83,7 @@ impl FixFlow {
         let _busy = Busy(&self.busy);
         d.set_status(Status::of(StatusKind::Checking));
         d.show_loading();
-        let sel = d.read_selection(&s.excluded_apps, select_all).await;
+        let sel = d.read_selection(&s.excluded_apps).await;
         let text = match sel.text.as_deref() {
             Some(t) if sel.ok && !t.is_empty() => t,
             _ => {
@@ -217,7 +216,7 @@ mod tests {
         fn settings(&self) -> Settings {
             Settings { paused: self.paused, quick_fix: self.quick_fix, dictionary: vec!["Xpiki".into()], ..Settings::default() }
         }
-        async fn read_selection(&self, excluded: &[String], _select_all: bool) -> Selection {
+        async fn read_selection(&self, excluded: &[String]) -> Selection {
             *self.excluded.borrow_mut() = excluded.to_vec();
             let gate = self.gate.borrow_mut().take();
             if let Some(g) = gate {
@@ -268,7 +267,7 @@ mod tests {
     }
 
     async fn run(f: &Fake) -> FixOutcome {
-        FixFlow::default().run(f, false, None).await
+        FixFlow::default().run(f, None).await
     }
 
     #[tokio::test]
@@ -283,7 +282,7 @@ mod tests {
     #[tokio::test]
     async fn tone_always_shows_the_diff_even_with_quick_fix() {
         let f = Fake { quick_fix: true, diff: Choice::Dismiss, ..fake() };
-        assert_eq!(FixFlow::default().run(&f, false, Some(Tone::Formal)).await, FixOutcome::Dismissed);
+        assert_eq!(FixFlow::default().run(&f, Some(Tone::Formal)).await, FixOutcome::Dismissed);
         assert_eq!(f.diffs.get(), 1);
     }
 
@@ -373,9 +372,9 @@ mod tests {
         let (release, gate) = oneshot::channel();
         let f = Fake { sel: sel_err("no_selection"), gate: RefCell::new(Some(gate)), ..fake() };
         let flow = FixFlow::default();
-        let first = flow.run(&f, false, None);
+        let first = flow.run(&f, None);
         let second = async {
-            let r = flow.run(&f, false, None).await;
+            let r = flow.run(&f, None).await;
             release.send(()).unwrap();
             r
         };
