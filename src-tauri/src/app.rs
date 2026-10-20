@@ -21,6 +21,7 @@ use ugrammar_core::settings::{Mod, Settings, SettingsStore};
 
 pub const APP_NAME: &str = "ugrammar";
 const REPO_URL: &str = "https://github.com/tinwritescode/ugrammar";
+const LICENSE_URL: &str = "https://tyvn.online";
 const AX_SETTINGS_URL: &str = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
 const KEY_SERVICE: &str = "Proofy";
 const KEY_ACCOUNT: &str = "api-key";
@@ -395,6 +396,7 @@ impl Ctx {
                 open(AX_SETTINGS_URL);
             }
             "github" => open(REPO_URL),
+            "license" => open(LICENSE_URL),
             "restart" => self.app.restart(),
             tone => {
                 let Some(tone) = parse_tone(tone) else { return };

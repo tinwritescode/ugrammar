@@ -52,7 +52,7 @@ export interface TrayState {
 
 export type UpdateNote = "checking" | "downloading" | "up_to_date" | "failed" | "unsupported";
 
-export type TrayAction = "quit" | "ax" | "github" | "restart" | Tone;
+export type TrayAction = "quit" | "ax" | "github" | "license" | "restart" | Tone;
 
 export interface TestResult {
   ok: boolean;

@@ -123,6 +123,10 @@ $("github").onclick = (e) => {
   e.preventDefault();
   proofy.trayAction("github");
 };
+$("license").onclick = (e) => {
+  e.preventDefault();
+  proofy.trayAction("license");
+};
 void proofy.appVersion().then((v) => {
   appVersion = v;
   $("version").textContent = `v${v}`;
