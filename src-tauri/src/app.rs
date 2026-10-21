@@ -33,6 +33,8 @@ const SECOND: Duration = Duration::from_secs(1);
 const UPDATE_EVERY: Duration = Duration::from_secs(6 * 3600);
 /// An untouched auto-check popup moves to the menu-bar list after this long.
 const POPUP_IDLE: Duration = Duration::from_secs(8);
+/// Taller fields scroll: below them is too far from the sentence.
+const FIELD_MAX_H: f64 = 80.0;
 
 pub static CTX: OnceLock<Ctx> = OnceLock::new();
 
@@ -745,12 +747,17 @@ impl Ctx {
         self.check_text(job.sentence.clone(), explain, None, 30000).await
     }
 
-    /// Above the sentence's first line (else a line below its last); with no bounds, or the sentence scrolled away,
-    /// the focused window's top-right corner, else the screen's.
+    /// Under a one-line field; else above the sentence's first line (else a line below its last); with no bounds,
+    /// or the sentence scrolled away, the focused window's top-right corner, else the screen's.
     async fn sentence_anchor(&self, f: &Found) -> Anchor {
         let last = f.start + utf16_len(&f.sentence).saturating_sub(1);
         let snap = self.snapshot(&self.settings().excluded_apps, vec![json!({ "loc": f.start, "len": 1 }), json!({ "loc": last, "len": 1 })]).await;
         let here = snap.ok && snap.visible == Some(true) && snap.pid == f.pid;
+        // A one-line field (Chrome's address bar, search boxes): right under it, bounds or not.
+        if let (true, Some(r)) = (here, snap.field.filter(|r| r.h > 0.0 && r.h <= FIELD_MAX_H)) {
+            debug("auto anchor field");
+            return Anchor::Text { x: r.x + POPOVER_W / 2.0, y: r.y + r.h + 6.0, alt_y: r.y - 6.0, above: false };
+        }
         let bounds = snap.bounds.unwrap_or_default();
         if let (true, Some(Some(a)), Some(Some(z))) = (here, bounds.first(), bounds.get(1)) {
             let shown = |r: &Rect| match snap.window {
@@ -758,12 +765,15 @@ impl Ctx {
                 None => ui::screen_near(&self.app, r.x, r.y).bounds.contains(r.x, r.y),
             };
             if shown(a) && shown(z) {
+                debug("auto anchor text");
                 return Anchor::Text { x: a.x + POPOVER_W / 2.0 - 16.0, y: z.y + 2.0 * z.h + 6.0, alt_y: a.y - 6.0, above: true };
             }
         }
         if let (true, Some(w)) = (here, snap.window) {
+            debug("auto anchor window");
             return Anchor::Corner { x: w.x + w.w - 12.0, y: w.y + 40.0 };
         }
+        debug("auto anchor screen");
         let (x, y) = ui::cursor(&self.app);
         let area = ui::screen_near(&self.app, x, y).work;
         Anchor::Corner { x: area.x + area.w - 12.0, y: area.y + 12.0 }

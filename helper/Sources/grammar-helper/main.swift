@@ -193,14 +193,8 @@ func handleCaret(_ id: Any?, _ msg: [String: Any]) {
         }
     }
     if !precise {
-        var pv: CFTypeRef?, sv: CFTypeRef?
-        var pt = CGPoint.zero, sz = CGSize.zero
-        guard AXUIElementCopyAttributeValue(el, kAXPositionAttribute as CFString, &pv) == .success,
-              AXUIElementCopyAttributeValue(el, kAXSizeAttribute as CFString, &sv) == .success,
-              AXValueGetValue(pv as! AXValue, .cgPoint, &pt), AXValueGetValue(sv as! AXValue, .cgSize, &sz) else {
-            return reply(id, true, ["visible": false])
-        }
-        rect = CGRect(origin: pt, size: sz)
+        guard let f = frame(el) else { return reply(id, true, ["visible": false]) }
+        rect = f
     }
     reply(id, true, ["visible": true, "precise": precise, "selLen": selLen, "x": rect.origin.x, "y": rect.origin.y, "w": rect.size.width, "h": rect.size.height, "bundleId": bundle])
 }
@@ -275,25 +269,29 @@ func handleSnapshot(_ id: Any?, _ msg: [String: Any]) {
         if let rect = rangeRect(el, value, &leaves, loc, len) { bounds.append(["x": rect.origin.x, "y": rect.origin.y, "w": rect.size.width, "h": rect.size.height]) }
         else { bounds.append(NSNull()) }
     }
-    // Only bounds requests place a popup; plain polls skip the window lookup.
-    var window: Any = NSNull()
-    if !bounds.isEmpty, let w = focusedWindowFrame(app.processIdentifier) {
-        window = ["x": w.origin.x, "y": w.origin.y, "w": w.size.width, "h": w.size.height]
-    }
+    // Only bounds requests place a popup; plain polls skip the frame lookups.
+    func json(_ r: CGRect?) -> Any { r.map { ["x": $0.origin.x, "y": $0.origin.y, "w": $0.size.width, "h": $0.size.height] } ?? NSNull() }
+    let placing = !bounds.isEmpty
     reply(id, true, ["visible": true, "text": value, "caret": cf.location, "selLen": cf.length, "pid": Int(app.processIdentifier),
-                     "bundleId": bundle, "appName": app.localizedName ?? "", "bounds": bounds, "window": window])
+                     "bundleId": bundle, "appName": app.localizedName ?? "", "bounds": bounds,
+                     "field": placing ? json(frame(el)) : NSNull(), "window": placing ? json(focusedWindowFrame(app.processIdentifier)) : NSNull()])
+}
+
+/// Screen frame of an element.
+func frame(_ el: AXUIElement) -> CGRect? {
+    var pv: CFTypeRef?, sv: CFTypeRef?
+    var pt = CGPoint.zero, sz = CGSize.zero
+    guard AXUIElementCopyAttributeValue(el, kAXPositionAttribute as CFString, &pv) == .success,
+          AXUIElementCopyAttributeValue(el, kAXSizeAttribute as CFString, &sv) == .success,
+          AXValueGetValue(pv as! AXValue, .cgPoint, &pt), AXValueGetValue(sv as! AXValue, .cgSize, &sz) else { return nil }
+    return CGRect(origin: pt, size: sz)
 }
 
 func focusedWindowFrame(_ pid: pid_t) -> CGRect? {
-    var wv: CFTypeRef?, pv: CFTypeRef?, sv: CFTypeRef?
-    var pt = CGPoint.zero, sz = CGSize.zero
+    var wv: CFTypeRef?
     guard AXUIElementCopyAttributeValue(AXUIElementCreateApplication(pid), kAXFocusedWindowAttribute as CFString, &wv) == .success,
           let w = wv, CFGetTypeID(w) == AXUIElementGetTypeID() else { return nil }
-    let win = w as! AXUIElement
-    guard AXUIElementCopyAttributeValue(win, kAXPositionAttribute as CFString, &pv) == .success,
-          AXUIElementCopyAttributeValue(win, kAXSizeAttribute as CFString, &sv) == .success,
-          AXValueGetValue(pv as! AXValue, .cgPoint, &pt), AXValueGetValue(sv as! AXValue, .cgSize, &sz) else { return nil }
-    return CGRect(origin: pt, size: sz)
+    return frame(w as! AXUIElement)
 }
 
 /// Brings the app forward, so a fix picked from the menu-bar list can be written into it.

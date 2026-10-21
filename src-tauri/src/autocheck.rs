@@ -44,7 +44,9 @@ pub struct Snapshot {
     pub bundle_id: Option<String>,
     pub app_name: Option<String>,
     pub bounds: Option<Vec<Option<Rect>>>,
-    /// Frame of the focused window.
+    /// Frame of the focused field; sent with bounds requests only.
+    pub field: Option<Rect>,
+    /// Frame of the focused window; sent with bounds requests only.
     pub window: Option<Rect>,
 }
 

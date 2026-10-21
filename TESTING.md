@@ -56,5 +56,6 @@ Automated: `bun test` (engine, diff, settings, flow) and `bun run typecheck`.
 - Delete a listed sentence from its field → it leaves the list. Unhandled entries drop after 10 min (max 10).
 - Delete the sentence and type it again (also in another app): no new request (cached 10 min); a dismissed sentence never comes back this session. Changing endpoint/model/dictionary/explain/language re-checks.
 - Engine down (wrong endpoint): no popover; the same sentence is retried only after 30s.
-- App without text bounds: popover opens at the focused window's top-right corner (else the screen's).
+- One-line field (Chrome address bar, search box): type `xin chao ban hien.` → popover opens right under the field.
+- Multi-line field without text bounds: popover opens at the focused window's top-right corner (else the screen's).
 - Debug: `grep auto /tmp/proofy-debug.log` — `visible=false why=…` names the failing step (role, no value, no range).
