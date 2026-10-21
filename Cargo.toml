@@ -1,0 +1,15 @@
+[workspace]
+members = ["core", "src-tauri"]
+resolver = "2"
+
+# Dev: line numbers in backtraces, no debug info for dependencies; builds and links faster.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

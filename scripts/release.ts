@@ -14,7 +14,7 @@ for (const f of ["key.pem", "cert.pem", "updater.key"]) {
 if (!existsSync(rcodesign)) throw new Error("rcodesign not found: cargo install apple-codesign");
 
 const { version } = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8"));
-const bundleDir = "src-tauri/target/release/bundle/macos";
+const bundleDir = "target/release/bundle/macos";
 const app = join(bundleDir, "ugrammar.app");
 
 await $`bun run helper`;
