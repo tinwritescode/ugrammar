@@ -1,3 +1,4 @@
+use tauri::window::{Effect, EffectState, EffectsBuilder};
 use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_nspanel::{tauri_panel, CollectionBehavior, ManagerExt, PanelBuilder, PanelLevel, StyleMask};
 
@@ -29,6 +30,10 @@ impl Area {
 
     pub fn fit_y(&self, y: f64, h: f64) -> f64 {
         y.max(self.y + INSET).min(self.y + self.h - h - INSET)
+    }
+
+    pub fn contains(&self, x: f64, y: f64) -> bool {
+        self.distance2(x, y) == 0.0
     }
 
     fn distance2(&self, x: f64, y: f64) -> f64 {
@@ -94,6 +99,9 @@ pub fn tray_rect(app: &AppHandle) -> Option<Area> {
     Some(Area { x: p.x, y: p.y, w: z.width, h: z.height })
 }
 
+/// Matches the 12px corners of the tray panel and popover card in the web UI.
+const CORNER_RADIUS: f64 = 12.0;
+
 /// Non-activating, never-key panel: clicks reach it while the app being typed in keeps focus.
 /// Main thread only.
 pub fn float_panel(app: &AppHandle, label: &str, page: &str, w: f64, h: f64, shadow: bool) -> tauri::Result<WebviewWindow> {
@@ -108,12 +116,14 @@ pub fn float_panel(app: &AppHandle, label: &str, page: &str, w: f64, h: f64, sha
         .has_shadow(shadow)
         .no_activate(true)
         .build()?;
-    app.get_webview_window(label).ok_or(tauri::Error::WindowNotFound)
+    let win = app.get_webview_window(label).ok_or(tauri::Error::WindowNotFound)?;
+    vibrancy(&win)?;
+    Ok(win)
 }
 
 /// The focusable menu-bar panel (it has inputs). Main thread only.
 pub fn tray_window(app: &AppHandle, w: f64, h: f64) -> tauri::Result<WebviewWindow> {
-    WebviewWindowBuilder::new(app, "tray", WebviewUrl::App("tray.html".into()))
+    let win = WebviewWindowBuilder::new(app, "tray", WebviewUrl::App("tray.html".into()))
         .inner_size(w, h)
         .visible(false)
         .decorations(false)
@@ -123,7 +133,14 @@ pub fn tray_window(app: &AppHandle, w: f64, h: f64) -> tauri::Result<WebviewWind
         .transparent(true)
         .shadow(true)
         .visible_on_all_workspaces(true)
-        .build()
+        .build()?;
+    vibrancy(&win)?;
+    Ok(win)
+}
+
+/// Native translucent material behind the page. Active even when unfocused: the popover never takes focus.
+fn vibrancy(win: &WebviewWindow) -> tauri::Result<()> {
+    win.set_effects(EffectsBuilder::new().effect(Effect::Popover).state(EffectState::Active).radius(CORNER_RADIUS).build())
 }
 
 /// Order a panel front without activating ugrammar.

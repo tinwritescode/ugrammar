@@ -10,6 +10,7 @@ export const proofy: ProofyApi = {
     void invoke<PopoverPayload | null>("popover_current").then((p) => p && cb(p));
   },
   popoverAction: (action) => void invoke("popover_action", { action }),
+  pendingAction: (id, action) => void invoke("pending_action", { id, action }),
   popoverResize: (height, width) => void invoke("popover_resize", { height, width }),
   checkUpdate: () => void invoke("check_update_now"),
   clearInsights: () => invoke("clear_insights"),
@@ -17,6 +18,7 @@ export const proofy: ProofyApi = {
   setApiKey: (key) => invoke("set_api_key", { key }),
   testConnection: (draft) => invoke("test_connection", { draft }),
   pickApp: () => invoke("pick_app"),
+  appInfo: (ids) => invoke("app_info", { ids }),
   getTray: () => invoke("get_tray"),
   onTray: (cb) => void listen<TrayState>("tray:state", (e) => cb(e.payload)),
   trayAction: (action) => void invoke("tray_action", { action }),

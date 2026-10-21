@@ -1,42 +1,56 @@
-/* Tokens mirrored from the CapMoney design system: charcoal surfaces, one accent, flat cards, pill buttons. */
+/* Native macOS idiom: the window's vibrancy is the surface; grouped lists, 6–12px corners, one blue accent. */
 :root {
   color-scheme: dark light;
-  --background: oklch(0.17 0.006 260); --surface: oklch(0.22 0.008 260); --surface-2: oklch(0.27 0.01 260);
-  --foreground: oklch(0.97 0 0); --muted: oklch(0.68 0 0);
-  --primary: oklch(0.66 0.17 252); --primary-fg: oklch(0.98 0 0);
-  --accent: oklch(0.3 0.05 252);
-  --expense: oklch(0.68 0.19 22); --income: oklch(0.76 0.17 150);
-  --expense-bg: oklch(0.68 0.19 22 / .16); --income-bg: oklch(0.76 0.17 150 / .16);
-  --destructive: oklch(0.64 0.2 25);
-  --border: rgba(255,255,255,.08); --input: rgba(255,255,255,.12);
+  --fg: #f3f4f6; --fg-2: rgba(235,235,245,.7); --fg-3: rgba(235,235,245,.55);
+  --group: rgba(255,255,255,.055); --group-border: rgba(255,255,255,.06); --hair: rgba(255,255,255,.09);
+  --ctrl: rgba(255,255,255,.08); --ctrl-border: rgba(255,255,255,.1); --row-hover: rgba(255,255,255,.06);
+  --field: rgba(0,0,0,.22); --field-border: rgba(255,255,255,.12);
+  --seg-track: rgba(255,255,255,.07); --seg-on: rgba(255,255,255,.18); --seg-shadow: 0 1px 2px rgba(0,0,0,.3);
+  --switch-off: rgba(255,255,255,.18); --kbd: rgba(255,255,255,.08); --kbd-border: rgba(255,255,255,.14);
+  --header: rgba(36,37,43,.6); --hover: brightness(1.12);
+  /* Fills carrying white text sit darker than the accent so the label passes 4.5:1. */
+  --primary: oklch(0.6 0.17 252); --primary-tint: oklch(0.66 0.17 252 / .2); --primary-fg: oklch(0.78 0.12 252);
+  --success: oklch(0.8 0.15 150); --success-bg: oklch(0.8 0.15 150 / .16); --on-success: #0d2a18;
+  --danger: oklch(0.74 0.16 22); --danger-bg: oklch(0.68 0.19 22 / .16);
 }
 @media (prefers-color-scheme: light) {
   :root {
-    --background: oklch(0.97 0.004 260); --surface: oklch(1 0 0); --surface-2: oklch(0.94 0.006 260);
-    --foreground: oklch(0.2 0 0); --muted: oklch(0.48 0 0);
-    --accent: oklch(0.93 0.04 252);
-    --expense: oklch(0.58 0.2 25); --income: oklch(0.55 0.15 150);
-    --expense-bg: oklch(0.58 0.2 25 / .12); --income-bg: oklch(0.55 0.15 150 / .14);
-    --border: rgba(0,0,0,.09); --input: rgba(0,0,0,.14);
+    --fg: #1d1d1f; --fg-2: rgba(60,60,67,.82); --fg-3: rgba(60,60,67,.68);
+    --group: rgba(255,255,255,.75); --group-border: rgba(0,0,0,.06); --hair: rgba(0,0,0,.08);
+    --ctrl: rgba(255,255,255,.9); --ctrl-border: rgba(0,0,0,.12); --row-hover: rgba(0,0,0,.04);
+    --field: #fff; --field-border: rgba(0,0,0,.14);
+    --seg-track: rgba(0,0,0,.06); --seg-on: #fff; --seg-shadow: 0 1px 2px rgba(0,0,0,.15), 0 0 0 .5px rgba(0,0,0,.06);
+    --switch-off: rgba(0,0,0,.15); --kbd: #fff; --kbd-border: rgba(0,0,0,.16);
+    --header: rgba(246,246,248,.7); --hover: brightness(.96);
+    --primary: oklch(0.58 0.18 252); --primary-tint: oklch(0.66 0.17 252 / .14); --primary-fg: oklch(0.5 0.18 252);
+    --success: oklch(0.5 0.14 150); --success-bg: oklch(0.55 0.15 150 / .13); --on-success: #fff;
+    --danger: oklch(0.54 0.2 25); --danger-bg: oklch(0.58 0.2 25 / .1);
   }
 }
-html, body { font: 13px/1.5 "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif; color: var(--foreground); font-feature-settings: "tnum"; }
+html, body {
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, system-ui, sans-serif; color: var(--fg);
+  -webkit-font-smoothing: antialiased; font-feature-settings: "tnum";
+}
 button {
-  font: inherit; font-weight: 600; height: 34px; padding: 0 16px; border-radius: 999px; cursor: pointer;
-  border: 1px solid var(--border); background: var(--surface-2); color: var(--foreground);
-  transition: transform .15s, filter .15s; -webkit-app-region: no-drag;
+  font: inherit; font-size: 12px; font-weight: 500; height: 26px; padding: 0 10px; border-radius: 6px;
+  border: .5px solid var(--ctrl-border); background: var(--ctrl); color: var(--fg);
+  transition: filter .12s, background-color .12s; -webkit-app-region: no-drag;
 }
-button:hover { filter: brightness(1.1); }
-button:active { transform: scale(.96) translateY(1px); }
-button.primary {
-  border-color: transparent; color: var(--primary-fg);
-  background: linear-gradient(to bottom, var(--primary), color-mix(in oklab, var(--primary) 86%, black));
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.25), inset 0 -2px 0 rgba(0,0,0,.18);
-}
+button:hover { filter: var(--hover); }
+button:active { filter: brightness(.9); }
+button.primary { border-color: transparent; background: var(--primary); color: #fff; font-weight: 600; box-shadow: inset 0 .5px 0 rgba(255,255,255,.25); }
+button.ghost { border-color: transparent; background: transparent; }
+button.ghost:hover { background: var(--row-hover); filter: none; }
 button:disabled { opacity: .5; pointer-events: none; }
 input, select {
-  font: inherit; height: 36px; padding: 0 12px; border-radius: 14px; border: 1px solid var(--input);
-  background: var(--surface-2); color: var(--foreground); outline: none;
+  font: inherit; font-size: 12px; height: 28px; padding: 0 9px; box-sizing: border-box; border-radius: 6px;
+  border: .5px solid var(--field-border); background: var(--field); color: var(--fg); outline: none;
 }
-input:focus-visible, select:focus-visible { border-color: var(--primary); }
+:is(button, input, select):focus-visible { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-tint); }
+kbd {
+  display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box; border-radius: 4px;
+  background: var(--kbd); border: .5px solid var(--kbd-border); box-shadow: 0 1px 0 var(--kbd-border);
+  font: inherit; font-size: 11px; font-weight: 600; color: var(--fg);
+}
+svg { width: 16px; height: 16px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }

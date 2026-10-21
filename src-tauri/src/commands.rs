@@ -1,7 +1,8 @@
 use crate::app::ctx;
-use crate::ipc::{Choice, PopoverPayload, Status, StatusKind, TrayState};
+use crate::ipc::{AppInfo, Choice, PopoverPayload, Status, StatusKind, TrayState};
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{json, Value};
+use std::time::Duration;
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 use tokio::sync::oneshot;
@@ -12,6 +13,12 @@ use ugrammar_core::engine::{ConnectionStatus, OpenAICompatibleEngine, OpenAIConf
 #[tauri::command]
 pub async fn popover_action(action: Choice) {
     ctx().close_popover(action);
+}
+
+/// Áp dụng / Bỏ qua on a fix in the tray's waiting list.
+#[tauri::command]
+pub async fn pending_action(id: u64, action: Choice) {
+    ctx().pending_action(id, action).await;
 }
 
 #[tauri::command]
@@ -95,6 +102,12 @@ pub async fn pick_app() -> Option<String> {
     let out = tokio::process::Command::new("/usr/bin/mdls").args(["-raw", "-name", "kMDItemCFBundleIdentifier"]).arg(path?).output().await.ok()?;
     let id = String::from_utf8_lossy(&out.stdout).trim().to_string();
     (out.status.success() && !id.is_empty() && id != "(null)").then_some(id)
+}
+
+#[tauri::command]
+pub async fn app_info(ids: Vec<String>) -> Vec<AppInfo> {
+    let r = ctx().helper.request("app_info", json!({ "ids": ids }), Duration::from_secs(10)).await;
+    serde_json::from_value(r["apps"].clone()).unwrap_or_default()
 }
 
 #[tauri::command]

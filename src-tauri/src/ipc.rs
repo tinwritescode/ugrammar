@@ -27,6 +27,8 @@ pub struct PopoverPayload {
     pub app_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notes: Option<Vec<String>>,
+    /// Esc dismisses it; auto-check popups leave Esc to the app being typed in.
+    pub esc: bool,
 }
 
 impl PopoverPayload {
@@ -39,12 +41,24 @@ impl PopoverPayload {
             message: None,
             app_name,
             notes: (!notes.is_empty()).then_some(notes),
+            esc: true,
         }
     }
 
     pub fn text(kind: PopoverKind, message: &str) -> Self {
-        PopoverPayload { kind, original: None, corrected: None, ops: None, message: Some(message.into()), app_name: None, notes: None }
+        PopoverPayload { kind, original: None, corrected: None, ops: None, message: Some(message.into()), app_name: None, notes: None, esc: false }
     }
+}
+
+/// An excluded app as the tray lists it; `name`/`icon` are absent when the app is not installed.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AppInfo {
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Base64 PNG.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -52,6 +66,8 @@ impl PopoverPayload {
 pub enum Choice {
     Accept,
     Dismiss,
+    /// Closed without a decision (timed out, or another popover took its place).
+    Later,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -102,4 +118,17 @@ pub struct TrayState {
     pub update: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub update_note: Option<UpdateNote>,
+    /// Auto-check fixes not acted on yet, oldest first.
+    pub pending: Vec<PendingFix>,
+}
+
+/// An auto-check fix waiting in the menu-bar list.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingFix {
+    pub id: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app_name: Option<String>,
+    pub ops: Vec<DiffOp>,
+    pub notes: Vec<String>,
 }

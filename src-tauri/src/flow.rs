@@ -40,10 +40,10 @@ pub trait FlowDeps {
 
 fn read_error(code: &str) -> String {
     match code {
-        "excluded_app" => "Skipped: this app is on the exclusion list.".into(),
-        "secure_field" => "Skipped: secure/password field.".into(),
-        "no_selection" => "Select some text first.".into(),
-        other => format!("Could not read selection ({other})."),
+        "excluded_app" => "Bỏ qua: app này nằm trong danh sách bỏ qua.".into(),
+        "secure_field" => "Bỏ qua: ô mật khẩu hoặc ô bảo mật.".into(),
+        "no_selection" => "Hãy chọn chữ trước.".into(),
+        other => format!("Không đọc được đoạn đã chọn ({other})."),
     }
 }
 
@@ -101,7 +101,7 @@ impl FixFlow {
         };
 
         if js_trim(text).split(is_js_space_char).filter(|w| !w.is_empty()).count() < 3 {
-            d.show_message("Too short to check (under 3 words).");
+            d.show_message("Quá ngắn để kiểm tra (dưới 3 từ).");
             Self::idle(d);
             return FixOutcome::TooShort;
         }
@@ -118,7 +118,7 @@ impl FixFlow {
         };
 
         if corrected == text {
-            d.show_message("No changes needed ✓");
+            d.show_message("Không có lỗi nào ✓");
             Self::idle(d);
             return FixOutcome::Unchanged;
         }
@@ -132,7 +132,7 @@ impl FixFlow {
                 return FixOutcome::WriteFailed;
             }
             d.on_applied(text, &corrected, &notes);
-            d.show_message("Fixed ✓  ⌘Z to undo");
+            d.show_message("Đã sửa, ⌘Z để hoàn tác ✓");
             return FixOutcome::Applied;
         }
         let choice = d.show_diff(PopoverPayload::diff(text, &corrected, sel.app_name.clone(), notes.clone())).await;
@@ -336,7 +336,7 @@ mod tests {
         let f = Fake { sel: sel_err("secure_field"), ..fake() };
         assert_eq!(run(&f).await, FixOutcome::Skipped);
         assert_eq!(f.engine_calls.get(), 0);
-        assert!(f.msgs.borrow()[0].contains("secure"));
+        assert!(f.msgs.borrow()[0].contains("bảo mật"));
     }
 
     #[tokio::test]

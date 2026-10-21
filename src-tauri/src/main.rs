@@ -42,6 +42,7 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             commands::popover_action,
+            commands::pending_action,
             commands::popover_resize,
             commands::popover_current,
             commands::check_update_now,
@@ -50,6 +51,7 @@ fn main() {
             commands::set_api_key,
             commands::test_connection,
             commands::pick_app,
+            commands::app_info,
             commands::get_tray,
             commands::tray_action,
             commands::tray_resize,

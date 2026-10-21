@@ -8,6 +8,8 @@ import Security
 //      {"id":2,"cmd":"write","text":"...","pid":123,"method":"ax|clipboard"}
 //      {"id":3,"cmd":"status"} {"cmd":"prompt_ax"} {"cmd":"set_hotkey","key":"G","mods":["alt","cmd"]}
 //      {"cmd":"keychain_get|keychain_set|keychain_delete","service":"..","account":"..","value":".."}
+//      {"cmd":"app_info","ids":["bundle.id"]} -> {"apps":[{"id":"..","name":"..","icon":"<base64 png>"}]}
+//      {"cmd":"activate","pid":123}
 // Out: {"id":1,"ok":true,...} | {"id":1,"ok":false,"error":"..."} | {"event":"hotkey"}
 
 let out = FileHandle.standardOutput
@@ -273,8 +275,34 @@ func handleSnapshot(_ id: Any?, _ msg: [String: Any]) {
         if let rect = rangeRect(el, value, &leaves, loc, len) { bounds.append(["x": rect.origin.x, "y": rect.origin.y, "w": rect.size.width, "h": rect.size.height]) }
         else { bounds.append(NSNull()) }
     }
+    // Only bounds requests place a popup; plain polls skip the window lookup.
+    var window: Any = NSNull()
+    if !bounds.isEmpty, let w = focusedWindowFrame(app.processIdentifier) {
+        window = ["x": w.origin.x, "y": w.origin.y, "w": w.size.width, "h": w.size.height]
+    }
     reply(id, true, ["visible": true, "text": value, "caret": cf.location, "selLen": cf.length, "pid": Int(app.processIdentifier),
-                     "bundleId": bundle, "appName": app.localizedName ?? "", "bounds": bounds])
+                     "bundleId": bundle, "appName": app.localizedName ?? "", "bounds": bounds, "window": window])
+}
+
+func focusedWindowFrame(_ pid: pid_t) -> CGRect? {
+    var wv: CFTypeRef?, pv: CFTypeRef?, sv: CFTypeRef?
+    var pt = CGPoint.zero, sz = CGSize.zero
+    guard AXUIElementCopyAttributeValue(AXUIElementCreateApplication(pid), kAXFocusedWindowAttribute as CFString, &wv) == .success,
+          let w = wv, CFGetTypeID(w) == AXUIElementGetTypeID() else { return nil }
+    let win = w as! AXUIElement
+    guard AXUIElementCopyAttributeValue(win, kAXPositionAttribute as CFString, &pv) == .success,
+          AXUIElementCopyAttributeValue(win, kAXSizeAttribute as CFString, &sv) == .success,
+          AXValueGetValue(pv as! AXValue, .cgPoint, &pt), AXValueGetValue(sv as! AXValue, .cgSize, &sz) else { return nil }
+    return CGRect(origin: pt, size: sz)
+}
+
+/// Brings the app forward, so a fix picked from the menu-bar list can be written into it.
+func handleActivate(_ id: Any?, _ msg: [String: Any]) {
+    guard let pid = msg["pid"] as? Int, let app = NSRunningApplication(processIdentifier: pid_t(pid)) else {
+        return reply(id, false, ["error": "no_app"])
+    }
+    let ok = DispatchQueue.main.sync { app.activate(options: []) }
+    reply(id, ok, [:])
 }
 
 /// Replace one range of the focused field, only if it still holds `expect` (the user may have kept typing).
@@ -435,6 +463,34 @@ func setHotkey(key: String, mods: [String], slot: UInt32 = 1) -> String? {
     return s == noErr ? nil : "register_failed_\(s)"
 }
 
+// MARK: - App info
+
+func pngData(_ image: NSImage, side: Int) -> Data? {
+    guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side, bitsPerSample: 8, samplesPerPixel: 4,
+                                     hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+    image.draw(in: NSRect(x: 0, y: 0, width: side, height: side))
+    NSGraphicsContext.restoreGraphicsState()
+    return rep.representation(using: .png, properties: [:])
+}
+
+/// Display name and a 44px PNG icon (base64) per bundle id; ids with no installed app come back bare.
+func handleAppInfo(_ id: Any?, _ msg: [String: Any]) {
+    let ids = (msg["ids"] as? [String]) ?? []
+    let apps: [[String: Any]] = DispatchQueue.main.sync {
+        ids.map { bid in
+            var o: [String: Any] = ["id": bid]
+            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bid) else { return o }
+            let info = Bundle(url: url)?.localizedInfoDictionary ?? Bundle(url: url)?.infoDictionary ?? [:]
+            o["name"] = (info["CFBundleDisplayName"] as? String) ?? (info["CFBundleName"] as? String) ?? url.deletingPathExtension().lastPathComponent
+            if let png = pngData(NSWorkspace.shared.icon(forFile: url.path), side: 44) { o["icon"] = png.base64EncodedString() }
+            return o
+        }
+    }
+    reply(id, true, ["apps": apps])
+}
+
 // MARK: - Dispatch
 
 func dispatch(_ msg: [String: Any]) {
@@ -454,6 +510,8 @@ func dispatch(_ msg: [String: Any]) {
     case "caret": handleCaret(id, msg)
     case "snapshot": handleSnapshot(id, msg)
     case "replace_range": handleReplaceRange(id, msg)
+    case "app_info": handleAppInfo(id, msg)
+    case "activate": handleActivate(id, msg)
     case let c where c.hasPrefix("keychain_"): handleKeychain(id, c, msg)
     default: reply(id, false, ["error": "unknown_command"])
     }

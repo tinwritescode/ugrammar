@@ -1,7 +1,7 @@
-use crate::autocheck::{AutoChecker, Effect, Issue, Job, Rect, SentenceFix, Snapshot, POLL_MS};
+use crate::autocheck::{locate, AutoChecker, Effect, Found, Job, Outcome, Rect, Snapshot, POLL_MS};
 use crate::flow::{FixFlow, FixOutcome, FlowDeps};
 use crate::helper::{Helper, HelperEvent, Reply, Selection};
-use crate::ipc::{Choice, PopoverKind, PopoverPayload, Status, StatusKind, TrayState, UpdateNote};
+use crate::ipc::{Choice, PendingFix, PopoverKind, PopoverPayload, Status, StatusKind, TrayState, UpdateNote};
 use crate::ui;
 use serde_json::{json, Value};
 use std::io::Write as _;
@@ -18,6 +18,7 @@ use tokio::sync::{mpsc, oneshot};
 use ugrammar_core::engine::{CheckRequest, OpenAICompatibleEngine, OpenAIConfig, Tone};
 use ugrammar_core::insights::InsightStore;
 use ugrammar_core::settings::{Mod, Settings, SettingsStore};
+use ugrammar_core::text::{to_u16, utf16_len};
 
 pub const APP_NAME: &str = "ugrammar";
 const REPO_URL: &str = "https://github.com/tinwritescode/ugrammar";
@@ -30,6 +31,8 @@ pub const TRAY_W: f64 = 344.0;
 const TRAY_MAX_H: f64 = 600.0;
 const SECOND: Duration = Duration::from_secs(1);
 const UPDATE_EVERY: Duration = Duration::from_secs(6 * 3600);
+/// An untouched auto-check popup moves to the menu-bar list after this long.
+const POPUP_IDLE: Duration = Duration::from_secs(8);
 
 pub static CTX: OnceLock<Ctx> = OnceLock::new();
 
@@ -78,16 +81,16 @@ where
     });
 }
 
-/// `y` = top edge when placed below, `alt_y` = bottom edge when placed above.
 #[derive(Debug, Clone, Copy)]
-pub struct Anchor {
-    x: f64,
-    y: f64,
-    alt_y: f64,
+pub enum Anchor {
+    /// Centered on `x`; `y` = top edge when placed below, `alt_y` = bottom edge when placed above; `above` tries above first.
+    Text { x: f64, y: f64, alt_y: f64, above: bool },
+    /// The popover's top-right corner, for text without usable bounds.
+    Corner { x: f64, y: f64 },
 }
 
 fn below_rect(r: Rect) -> Anchor {
-    Anchor { x: r.x + r.w / 2.0, y: r.y + r.h + 6.0, alt_y: r.y - 6.0 }
+    Anchor::Text { x: r.x + r.w / 2.0, y: r.y + r.h + 6.0, alt_y: r.y - 6.0, above: false }
 }
 
 #[derive(Default)]
@@ -95,6 +98,8 @@ struct Popover {
     resolve: Option<oneshot::Sender<Choice>>,
     anchor: Option<Anchor>,
     size: (f64, f64),
+    /// Where it was last placed.
+    rect: Option<ui::Area>,
     /// Bumped by every close, so a stale message timer cannot close a newer popover.
     generation: u64,
     payload: Option<PopoverPayload>,
@@ -117,9 +122,10 @@ pub struct Ctx {
     auto: Mutex<AutoChecker>,
     auto_generation: AtomicU64,
     auto_running: AtomicBool,
-    card_open: AtomicBool,
-    loading_seq: AtomicU64,
-    loading_shown: AtomicBool,
+    /// Fix id of the open auto-check popup.
+    auto_popup: Mutex<Option<u64>>,
+    /// Busy flag and inbox ids last shown in the menu bar.
+    auto_seen: Mutex<(bool, Vec<u64>)>,
     flow: FixFlow,
     flow_anchor: Mutex<Option<Anchor>>,
     tray: Mutex<TrayPanel>,
@@ -185,9 +191,8 @@ pub fn init(app: &AppHandle) -> mpsc::UnboundedReceiver<HelperEvent> {
         auto: Mutex::new(AutoChecker::new()),
         auto_generation: AtomicU64::new(0),
         auto_running: AtomicBool::new(false),
-        card_open: AtomicBool::new(false),
-        loading_seq: AtomicU64::new(0),
-        loading_shown: AtomicBool::new(false),
+        auto_popup: Mutex::new(None),
+        auto_seen: Mutex::default(),
         flow: FixFlow::default(),
         flow_anchor: Mutex::new(None),
         tray: Mutex::default(),
@@ -206,12 +211,17 @@ impl Ctx {
 
     /// Every settings write goes through here so status and auto-check follow it.
     pub fn update_settings(&'static self, patch: Value) -> Settings {
+        let before = self.settings();
         let cfg = {
             let mut s = self.store.lock().unwrap();
             s.update(patch).unwrap_or_else(|_| s.get())
         };
         let cur = self.status.lock().unwrap().clone();
         self.set_status(if matches!(cur.kind, StatusKind::Paused | StatusKind::Idle) { Status::of(StatusKind::Idle) } else { cur });
+        let engine = |s: &Settings| (s.endpoint.clone(), s.model.clone(), s.dictionary.clone(), s.explain, s.explain_lang.clone());
+        if engine(&before) != engine(&cfg) {
+            self.auto.lock().unwrap().clear_cache(); // old answers came from another engine setup
+        }
         if cfg.auto_check && !cfg.paused {
             self.auto_start();
         } else {
@@ -293,6 +303,19 @@ impl Ctx {
             has_api_key,
             update: self.update.lock().unwrap().clone(),
             update_note: *self.update_note.lock().unwrap(),
+            pending: self
+                .auto
+                .lock()
+                .unwrap()
+                .inbox()
+                .iter()
+                .map(|f| PendingFix {
+                    id: f.id,
+                    app_name: f.app_name.clone(),
+                    ops: ugrammar_core::diff::diff_words(&f.sentence, &f.corrected),
+                    notes: f.notes.clone(),
+                })
+                .collect(),
         }
     }
 
@@ -322,7 +345,7 @@ impl Ctx {
     pub fn refresh_tray(&'static self) {
         if let Some(t) = self.app.tray_by_id("main") {
             let kind = self.status().kind;
-            let _ = t.set_title(Some(STATUS_TITLE(kind)));
+            let _ = t.set_title(Some(self.tray_title(kind)));
             let _ = t.set_tooltip(Some(format!("{APP_NAME} — {}", STATUS_LABEL(kind))));
             if let Ok(m) = self.tray_menu() {
                 let _ = t.set_menu(Some(m));
@@ -333,6 +356,16 @@ impl Ctx {
                 let st = self.tray_state().await;
                 let _ = self.app.emit_to("tray", "tray:state", st);
             });
+        }
+    }
+
+    /// Status other than idle wins; then an auto-check in flight, then the count of fixes waiting.
+    fn tray_title(&self, kind: StatusKind) -> String {
+        let a = self.auto.lock().unwrap();
+        match kind {
+            StatusKind::Idle if a.busy() => STATUS_TITLE(StatusKind::Checking).into(),
+            StatusKind::Idle if !a.inbox().is_empty() => format!("{} {}", STATUS_TITLE(kind), a.inbox().len()),
+            _ => STATUS_TITLE(kind).into(),
         }
     }
 
@@ -426,28 +459,35 @@ impl Ctx {
         }
     }
 
-    pub fn popover_open(&self) -> bool {
-        self.popover.lock().unwrap().resolve.is_some()
-    }
-
     pub fn popover_payload(&self) -> Option<PopoverPayload> {
         self.popover.lock().unwrap().payload.clone()
     }
 
     fn cursor_anchor(&self) -> Anchor {
         let (x, y) = ui::cursor(&self.app);
-        Anchor { x, y: y + 20.0, alt_y: y - 36.0 }
+        Anchor::Text { x, y: y + 20.0, alt_y: y - 36.0, above: false }
     }
 
-    /// Below the anchor if it fits, else above it; always clamped inside the display. Re-run after each resize.
+    /// On the anchor's preferred side if it fits, else the other; always clamped inside the display. Re-run after each resize.
     fn place_popover(&self) {
         let (a, (w, h)) = {
             let p = self.popover.lock().unwrap();
             (p.anchor.unwrap_or_else(|| self.cursor_anchor()), p.size)
         };
-        let area = ui::screen_near(&self.app, a.x, a.y).work;
-        let y = if a.y + h <= area.y + area.h - 8.0 { a.y } else { a.alt_y - h };
-        ui::place(&self.app, "popover", area.fit_x(a.x - w / 2.0, w), area.fit_y(y, h));
+        let (x, y) = match a {
+            Anchor::Text { x, y, alt_y, above } => {
+                let area = ui::screen_near(&self.app, x, y).work;
+                let fits_below = y + h <= area.y + area.h - 8.0;
+                let top = if (above && alt_y - h >= area.y + 8.0) || !fits_below { alt_y - h } else { y };
+                (area.fit_x(x - w / 2.0, w), area.fit_y(top, h))
+            }
+            Anchor::Corner { x, y } => {
+                let area = ui::screen_near(&self.app, x - 1.0, y).work;
+                (area.fit_x(x - w, w), area.fit_y(y, h))
+            }
+        };
+        self.popover.lock().unwrap().rect = Some(ui::Area { x, y, w, h });
+        ui::place(&self.app, "popover", x, y);
     }
 
     fn show_popover(&self, payload: PopoverPayload, anchor: Option<Anchor>) {
@@ -478,19 +518,23 @@ impl Ctx {
         self.place_popover();
     }
 
-    pub async fn show_diff(&self, p: PopoverPayload, anchor: Option<Anchor>) -> Choice {
-        self.close_popover(Choice::Dismiss);
+    /// `esc`: also take Esc globally; auto-check popups leave it to the app being typed in.
+    pub async fn show_diff(&self, p: PopoverPayload, anchor: Option<Anchor>, esc: bool) -> Choice {
+        let p = PopoverPayload { esc, ..p };
+        self.close_popover(Choice::Later);
         let (tx, rx) = oneshot::channel();
         self.popover.lock().unwrap().resolve = Some(tx);
         self.show_popover(p, anchor);
         let gs = self.app.global_shortcut();
         let _ = gs.register(accept_shortcut());
-        let _ = gs.register(dismiss_shortcut());
+        if esc {
+            let _ = gs.register(dismiss_shortcut());
+        }
         rx.await.unwrap_or(Choice::Dismiss)
     }
 
     pub fn show_message(&'static self, message: &str, anchor: Option<Anchor>) {
-        self.close_popover(Choice::Dismiss);
+        self.close_popover(Choice::Later);
         self.show_popover(PopoverPayload::text(PopoverKind::Message, message), anchor);
         let generation = self.popover.lock().unwrap().generation;
         tauri::async_runtime::spawn(async move {
@@ -502,8 +546,8 @@ impl Ctx {
     }
 
     fn show_loading(&self, anchor: Option<Anchor>) {
-        self.close_popover(Choice::Dismiss);
-        self.show_popover(PopoverPayload::text(PopoverKind::Loading, "Checking…"), anchor);
+        self.close_popover(Choice::Later);
+        self.show_popover(PopoverPayload::text(PopoverKind::Loading, "Đang kiểm tra…"), anchor);
     }
 
     // ---------- Flow ----------
@@ -536,8 +580,8 @@ impl Ctx {
     /// Hotkey checks the selection.
     pub async fn manual_check(&'static self, trigger: &str) {
         debug(trigger);
-        // A still-open popover counts as dismissed.
-        self.close_popover(Choice::Dismiss);
+        // A still-open popover is set aside: an auto-check fix waits in the menu-bar list.
+        self.close_popover(Choice::Later);
         tokio::task::yield_now().await;
         let outcome = self.run_flow(None).await;
         let st = self.status();
@@ -560,7 +604,7 @@ impl Ctx {
 
     /// Tone hotkey: pick Formal / Friendly / Short from a menu over the app being written in.
     pub fn on_hotkey2(&self) {
-        self.close_popover(Choice::Dismiss);
+        self.close_popover(Choice::Later);
         let a = &self.app;
         let menu = (|| {
             Menu::with_items(
@@ -635,46 +679,63 @@ impl Ctx {
         self.helper.request_as("snapshot", json!({ "excluded": excluded, "ranges": ranges }), 3 * SECOND).await
     }
 
+    fn now(&self) -> u64 {
+        self.started.elapsed().as_millis() as u64
+    }
+
     async fn auto_tick(&'static self) {
         let s = self.settings();
         if !s.auto_check || s.paused {
             return self.auto.lock().unwrap().reset();
         }
         let snap = self.snapshot(&s.excluded_apps, vec![]).await;
-        let now = self.started.elapsed().as_millis() as u64;
-        let fx = self.auto.lock().unwrap().on_snapshot(snap, now);
+        let fx = self.auto.lock().unwrap().on_snapshot(snap, self.now());
         self.apply(fx);
     }
 
     fn apply(&'static self, effects: Vec<Effect>) {
         for e in effects {
             match e {
-                Effect::Loading(at) => {
-                    let seq = self.loading_seq.fetch_add(1, Ordering::SeqCst) + 1;
-                    match at {
-                        None => {
-                            if self.loading_shown.swap(false, Ordering::SeqCst) && !self.popover_open() {
-                                self.close_popover(Choice::Dismiss);
-                            }
-                        }
-                        Some(at) => {
-                            tauri::async_runtime::spawn(self.auto_loading(at, seq));
-                        }
-                    }
-                }
                 Effect::Check(job) => {
                     tauri::async_runtime::spawn(async move {
                         let r = self.auto_check(&job).await;
-                        let fx = self.auto.lock().unwrap().on_check_done(job, r);
+                        let fx = self.auto.lock().unwrap().on_check_done(job, r, self.now());
                         self.apply(fx);
                     });
                 }
-                Effect::Sentence(fix) => {
-                    tauri::async_runtime::spawn(self.open_sentence_popup(fix));
+                Effect::Show(f) => {
+                    tauri::async_runtime::spawn(self.open_sentence_popup(f));
+                }
+                Effect::Hide(id) => {
+                    let mine = self.auto_popup.lock().unwrap().take_if(|p| *p == id).is_some();
+                    if mine {
+                        self.close_popover(Choice::Later);
+                    }
                 }
                 Effect::Log(m) => debug(&format!("auto {m}")),
             }
         }
+        self.auto_changed();
+    }
+
+    /// The menu-bar title and the tray's list follow the checker's busy flag and inbox.
+    fn auto_changed(&'static self) {
+        let seen = {
+            let a = self.auto.lock().unwrap();
+            (a.busy(), a.inbox().iter().map(|f| f.id).collect::<Vec<_>>())
+        };
+        let changed = {
+            let mut last = self.auto_seen.lock().unwrap();
+            std::mem::replace(&mut *last, seen.clone()) != seen
+        };
+        if changed {
+            self.refresh_tray();
+        }
+    }
+
+    fn auto_resolve(&'static self, id: u64, outcome: Outcome) {
+        self.auto.lock().unwrap().resolve(id, outcome, self.now());
+        self.auto_changed();
     }
 
     async fn auto_check(&self, job: &Job) -> Result<(String, Vec<String>), String> {
@@ -684,76 +745,110 @@ impl Ctx {
         self.check_text(job.sentence.clone(), explain, None, 30000).await
     }
 
-    fn blocked(&self) -> bool {
-        self.card_open.load(Ordering::SeqCst) || self.popover_open()
-    }
-
-    /// Popup mode: "Checking…" under the sentence; never over a card or a manual check.
-    async fn auto_loading(&'static self, (start, length): (usize, usize), seq: u64) {
-        if self.blocked() {
-            return;
+    /// Above the sentence's first line (else a line below its last); with no bounds, or the sentence scrolled away,
+    /// the focused window's top-right corner, else the screen's.
+    async fn sentence_anchor(&self, f: &Found) -> Anchor {
+        let last = f.start + utf16_len(&f.sentence).saturating_sub(1);
+        let snap = self.snapshot(&self.settings().excluded_apps, vec![json!({ "loc": f.start, "len": 1 }), json!({ "loc": last, "len": 1 })]).await;
+        let here = snap.ok && snap.visible == Some(true) && snap.pid == f.pid;
+        let bounds = snap.bounds.unwrap_or_default();
+        if let (true, Some(Some(a)), Some(Some(z))) = (here, bounds.first(), bounds.get(1)) {
+            let shown = |r: &Rect| match snap.window {
+                Some(w) => r.y >= w.y && r.y + r.h <= w.y + w.h,
+                None => ui::screen_near(&self.app, r.x, r.y).bounds.contains(r.x, r.y),
+            };
+            if shown(a) && shown(z) {
+                return Anchor::Text { x: a.x + POPOVER_W / 2.0 - 16.0, y: z.y + 2.0 * z.h + 6.0, alt_y: a.y - 6.0, above: true };
+            }
         }
-        // Sentence end, by the caret.
-        let anchor = self.range_anchor(start + length.saturating_sub(1), length.min(1)).await;
-        if seq != self.loading_seq.load(Ordering::SeqCst) || self.blocked() {
-            return;
+        if let (true, Some(w)) = (here, snap.window) {
+            return Anchor::Corner { x: w.x + w.w - 12.0, y: w.y + 40.0 };
         }
-        self.loading_shown.store(true, Ordering::SeqCst);
-        self.show_loading(anchor);
+        let (x, y) = ui::cursor(&self.app);
+        let area = ui::screen_near(&self.app, x, y).work;
+        Anchor::Corner { x: area.x + area.w - 12.0, y: area.y + 12.0 }
     }
 
-    /// Anchor below a text range (above when there is no room), from fresh AX bounds.
-    async fn range_anchor(&self, loc: usize, len: usize) -> Option<Anchor> {
-        let snap = self.snapshot(&self.settings().excluded_apps, vec![json!({ "loc": loc, "len": len })]).await;
-        if !snap.ok || snap.visible != Some(true) {
-            return None;
-        }
-        snap.bounds.and_then(|b| b.into_iter().next().flatten()).map(below_rect)
-    }
-
-    async fn issue_anchor(&self, it: &Issue) -> Option<Anchor> {
-        self.range_anchor(it.fix.start, it.fix.end - it.fix.start).await
-    }
-
-    /// Writes an accepted auto-check fix back over `original` and records it; says why when it cannot.
-    async fn write_fix(&self, start: usize, len: usize, original: &str, corrected: &str, notes: &[String]) -> bool {
-        let pid = self.auto.lock().unwrap().pid;
-        let args = json!({ "loc": start, "len": len, "text": corrected, "expect": original, "pid": pid });
+    /// Writes an accepted fix over its sentence and records it; says why when it cannot.
+    async fn write_fix(&'static self, f: &Found) -> bool {
+        let args = json!({ "loc": f.start, "len": utf16_len(&f.sentence), "text": f.corrected, "expect": f.sentence, "pid": f.pid });
         let r: Reply = self.helper.request_as("replace_range", args, 5 * SECOND).await;
         debug(&format!("auto write {}", outcome(r.ok, &r.method, &r.error)));
         if r.ok {
-            self.insights.lock().unwrap().record(original, corrected, notes);
+            self.insights.lock().unwrap().record(&f.sentence, &f.corrected, &f.notes);
         } else {
-            let e = r.error.as_deref().unwrap_or_default();
-            self.notify(&if e == "stale" { "Text changed; fix skipped.".into() } else { format!("Could not replace ({e}). Try the hotkey instead.") });
+            self.show_message(&format!("Không sửa được, hãy chọn câu rồi bấm {}", self.hotkey_label()), None);
         }
         r.ok
     }
 
-    /// A pending "Checking…" hint must not land over a newer popover.
-    fn cancel_loading(&self) {
-        self.loading_seq.fetch_add(1, Ordering::SeqCst);
-        self.loading_shown.store(false, Ordering::SeqCst);
+    /// Any popover up (a manual check, its message, another fix) keeps an auto-check popup away.
+    fn popover_busy(&self) -> bool {
+        self.popover.lock().unwrap().payload.is_some()
     }
 
-    /// Popup mode: the whole sentence's fix with reasons, opened as soon as the check comes back.
-    async fn open_sentence_popup(&'static self, fix: SentenceFix) {
-        let (it, app_name) = {
-            let a = self.auto.lock().unwrap();
-            (a.issue(fix.first_id).cloned(), a.app_name.clone())
+    /// The sentence's fix with reasons. ⌘↩ applies; Esc stays with the app being typed in.
+    async fn open_sentence_popup(&'static self, f: Found) {
+        let free = !self.popover_busy() && {
+            let mut p = self.auto_popup.lock().unwrap();
+            p.is_none() && p.insert(f.id) == &f.id
         };
-        // Never cover a card or a manual check.
-        let Some(it) = it else { return };
-        if self.blocked() || self.card_open.swap(true, Ordering::SeqCst) {
-            return;
+        if !free {
+            return self.auto_resolve(f.id, Outcome::Later);
         }
-        self.cancel_loading();
-        let anchor = self.issue_anchor(&it).await;
-        let choice = self.show_diff(PopoverPayload::diff(&fix.original, &fix.corrected, app_name, fix.notes.clone()), anchor).await;
-        let len = fix.original.encode_utf16().count();
-        let applied = choice == Choice::Accept && self.write_fix(fix.start, len, &fix.original, &fix.corrected, &fix.notes).await;
-        self.auto.lock().unwrap().resolve_sentence(fix.start, len, applied.then_some(fix.corrected.as_str()));
-        self.card_open.store(false, Ordering::SeqCst);
+        let anchor = self.sentence_anchor(&f).await;
+        if *self.auto_popup.lock().unwrap() != Some(f.id) {
+            return; // the user moved on meanwhile; the fix is in the list
+        }
+        // show_diff's own close bumps the generation once.
+        let generation = self.popover.lock().unwrap().generation + 1;
+        tauri::async_runtime::spawn(self.expire_popup(generation));
+        let choice = self.show_diff(PopoverPayload::diff(&f.sentence, &f.corrected, f.app_name.clone(), f.notes.clone()), Some(anchor), false).await;
+        let outcome = match choice {
+            Choice::Accept if self.write_fix(&f).await => Outcome::Applied,
+            Choice::Dismiss => Outcome::Dismissed,
+            _ => Outcome::Later,
+        };
+        self.auto_popup.lock().unwrap().take_if(|p| *p == f.id);
+        self.auto_resolve(f.id, outcome);
+    }
+
+    /// An untouched popup closes into the menu-bar list; the wait restarts while the mouse is over it.
+    async fn expire_popup(&self, generation: u64) {
+        loop {
+            tokio::time::sleep(POPUP_IDLE).await;
+            let hovered = {
+                let p = self.popover.lock().unwrap();
+                if p.generation != generation {
+                    return;
+                }
+                let (x, y) = ui::cursor(&self.app);
+                p.rect.is_some_and(|r| r.contains(x, y))
+            };
+            if !hovered {
+                return self.close_popover(Choice::Later);
+            }
+        }
+    }
+
+    /// The tray list's Áp dụng / Bỏ qua. The fix is written into its own app, brought forward first.
+    pub async fn pending_action(&'static self, id: u64, choice: Choice) {
+        if choice != Choice::Accept {
+            return self.auto_resolve(id, Outcome::Dismissed);
+        }
+        let Some(mut f) = self.auto.lock().unwrap().inbox_item(id).cloned() else { return };
+        self.hide_tray();
+        if let Some(pid) = f.pid {
+            self.helper.request("activate", json!({ "pid": pid }), 3 * SECOND).await;
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        let snap = self.snapshot(&self.settings().excluded_apps, vec![]).await;
+        if let (Some(text), true) = (snap.text.as_deref(), snap.pid == f.pid) {
+            f.start = locate(&to_u16(text), f.start, &f.sentence).unwrap_or(f.start);
+        }
+        if self.write_fix(&f).await {
+            self.auto_resolve(id, Outcome::Applied);
+        }
     }
 
     // ---------- Update ----------
@@ -896,7 +991,7 @@ impl FlowDeps for Ctx {
     }
 
     async fn show_diff(&self, p: PopoverPayload) -> Choice {
-        Ctx::show_diff(self, p, self.flow_anchor()).await
+        Ctx::show_diff(self, p, self.flow_anchor(), true).await
     }
 
     fn show_message(&self, message: &str) {
@@ -905,12 +1000,11 @@ impl FlowDeps for Ctx {
 
     // The manual check owns the popover now.
     fn show_loading(&self) {
-        self.cancel_loading();
         Ctx::show_loading(self, self.flow_anchor());
     }
 
     fn hide_loading(&self) {
-        self.close_popover(Choice::Dismiss);
+        self.close_popover(Choice::Later);
     }
 
     fn on_applied(&self, original: &str, corrected: &str, notes: &[String]) {

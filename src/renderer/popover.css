@@ -1,16 +1,29 @@
-:root { --line: var(--border); }
+/* The card fills the window; the window's vibrancy and 12px corners are its surface. */
 html, body { margin: 0; background: transparent; user-select: none; }
-#card { margin: 6px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 24px; -webkit-app-region: drag; }
-.text { white-space: pre-wrap; word-break: break-word; max-height: 340px; overflow: auto; font-size: 14px; line-height: 1.6; -webkit-app-region: no-drag; user-select: text; }
-ins { background: var(--income-bg); color: var(--income); text-decoration: none; border-radius: 6px; padding: 0 3px; }
-del { background: var(--expense-bg); color: var(--expense); border-radius: 6px; padding: 0 3px; }
-.notes { margin: 10px 0 0; padding: 10px 12px 10px 28px; background: var(--surface-2); border-radius: 16px; color: var(--muted); font-size: 12px; -webkit-app-region: no-drag; user-select: text; }
-.notes li { margin: 2px 0; }
-.bar { display: flex; gap: 8px; align-items: center; margin-top: 12px; -webkit-app-region: no-drag; }
-.hint { flex: 1; color: var(--muted); font-size: 11px; }
-.msg { text-align: center; padding: 4px 0; font-weight: 600; }
-#card.pill { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px 6px 10px; border-radius: 999px; color: var(--muted); font-size: 12px; font-weight: 600; white-space: nowrap; }
-#card.pop { transform-origin: top center; animation: pop .22s cubic-bezier(.2, .9, .3, 1.25); }
-@keyframes pop { from { opacity: 0; transform: scale(.82) translateY(-4px); } }
-.spin { width: 11px; height: 11px; border: 2px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin .7s linear infinite; }
+#card { box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; border-radius: 12px; box-shadow: inset 0 0 0 .5px var(--hair); -webkit-app-region: drag; }
+.meta { display: flex; gap: 6px; font-size: 11px; color: var(--fg-3); }
+.meta strong { font-weight: 600; color: var(--fg-2); }
+.text { white-space: pre-wrap; word-break: break-word; max-height: 340px; overflow: auto; font-size: 14px; line-height: 1.65; -webkit-app-region: no-drag; user-select: text; }
+.text ins { background: var(--success-bg); color: var(--success); text-decoration: none; font-weight: 600; border-radius: 4px; padding: 0 2px; }
+.text del { background: var(--danger-bg); color: var(--danger); border-radius: 4px; padding: 0 2px; }
+.notes { margin: 0; padding: 0; list-style: none; border-radius: 8px; background: var(--group); border: .5px solid var(--group-border); font-size: 12px; -webkit-app-region: no-drag; user-select: text; }
+.notes li { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; color: var(--fg-2); }
+.notes li + li { border-top: .5px solid var(--hair); }
+.notes .pair { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--fg-3); }
+.notes del { color: var(--danger); text-decoration-thickness: 1px; }
+.notes ins { color: var(--success); text-decoration: none; font-weight: 600; }
+.bar { display: flex; gap: 8px; align-items: center; -webkit-app-region: no-drag; }
+.bar button { height: 28px; padding: 0 12px; font-size: 13px; }
+.bar button.primary { padding: 0 14px; }
+.hint { flex: 1; display: flex; align-items: center; gap: 4px; color: var(--fg-3); font-size: 11px; }
+.hint kbd { color: var(--fg-2); box-shadow: none; }
+.hint kbd + span + kbd { margin-left: 6px; }
+.msg { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.check { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--success); color: var(--on-success); }
+.check svg { width: 11px; height: 11px; stroke-width: 3; }
+#card.compact { display: inline-flex; flex-direction: row; padding: 10px 14px 10px 12px; white-space: nowrap; }
+#card.pill { display: inline-flex; flex-direction: row; align-items: center; gap: 8px; height: 30px; padding: 0 12px 0 10px; color: var(--fg-2); font-size: 12px; font-weight: 500; white-space: nowrap; }
+#card.pop { transform-origin: top center; animation: pop .2s cubic-bezier(.2, .9, .3, 1.15); }
+@keyframes pop { from { opacity: 0; transform: translateY(-3px); } }
+.spin { width: 12px; height: 12px; box-sizing: border-box; border: 2px solid var(--hair); border-top-color: var(--primary-fg); border-radius: 50%; animation: spin .7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
