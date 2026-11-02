@@ -7,6 +7,8 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::claude_cli::{self, ClaudeCliConfig, ClaudeCliEngine};
+use crate::settings::{Provider, Settings};
 use crate::text::{is_js_space_char, js_trim, utf16_len, JS_SPACE};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -58,6 +60,8 @@ pub enum EngineErrorKind {
     Network,
     Http,
     BadResponse,
+    /// A local engine process could not run or reported a failure.
+    Process,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -67,7 +71,7 @@ pub struct EngineError {
 }
 
 impl EngineError {
-    fn new(kind: EngineErrorKind, message: impl Into<String>) -> Self {
+    pub(crate) fn new(kind: EngineErrorKind, message: impl Into<String>) -> Self {
         Self { kind, message: message.into() }
     }
 }
@@ -294,6 +298,56 @@ pub fn parse_chat_body(body: &str) -> Option<String> {
     js_path(&v, &["choices", "0", "message", "content"])?.as_str().map(String::from)
 }
 
+/// Turns any engine's raw model reply to `req` into the result the app shows.
+pub fn finish_check(req: &CheckRequest, raw: &str) -> Result<CheckResult, EngineError> {
+    let corrected = post_process(&req.text, &clean_model_output(raw, &req.text), &req.dictionary);
+    if corrected.is_empty() {
+        return Err(EngineError::new(EngineErrorKind::BadResponse, "Empty response"));
+    }
+    if utf16_len(&corrected) > utf16_len(&req.text) * 4 + 40 {
+        return Err(EngineError::new(EngineErrorKind::BadResponse, "Response far longer than input"));
+    }
+    let notes = if req.explain && corrected != req.text { parse_notes(raw) } else { vec![] };
+    Ok(CheckResult { original: req.text.clone(), corrected, notes: (!notes.is_empty()).then_some(notes) })
+}
+
+/// The engine `settings.provider` names.
+pub enum Engine {
+    Openai(OpenAICompatibleEngine),
+    ClaudeCli(ClaudeCliEngine),
+}
+
+impl Engine {
+    /// `api_key` is only used by the OpenAI-compatible engine.
+    pub fn from_settings(s: &Settings, api_key: Option<String>) -> Self {
+        match s.provider {
+            Provider::Openai => Self::Openai(OpenAICompatibleEngine::new(
+                OpenAIConfig { endpoint: s.endpoint.clone(), model: s.model.clone(), timeout_ms: s.timeout_ms },
+                api_key,
+            )),
+            Provider::ClaudeCli => {
+                let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+                let program = claude_cli::resolve_program(&s.claude_path, home.as_deref(), std::env::var_os("PATH").as_deref(), std::path::Path::exists);
+                Self::ClaudeCli(ClaudeCliEngine::new(ClaudeCliConfig { program, model: s.claude_model.clone(), timeout_ms: s.timeout_ms }))
+            }
+        }
+    }
+
+    pub async fn check(&self, req: &CheckRequest) -> Result<CheckResult, EngineError> {
+        match self {
+            Self::Openai(e) => e.check(req).await,
+            Self::ClaudeCli(e) => e.check(req).await,
+        }
+    }
+
+    pub async fn test_connection(&self) -> ConnectionStatus {
+        match self {
+            Self::Openai(e) => e.test_connection().await,
+            Self::ClaudeCli(e) => e.test_connection().await,
+        }
+    }
+}
+
 #[derive(Serialize)]
 struct ChatBody<'a> {
     model: &'a str,
@@ -339,15 +393,7 @@ impl<H: Http> OpenAICompatibleEngine<H> {
 
     pub async fn check(&self, req: &CheckRequest) -> Result<CheckResult, EngineError> {
         let raw = self.chat(&build_messages(&req.text, &req.dictionary, req.explain, req.explain_lang.as_deref(), req.tone)).await?;
-        let corrected = post_process(&req.text, &clean_model_output(&raw, &req.text), &req.dictionary);
-        if corrected.is_empty() {
-            return Err(EngineError::new(EngineErrorKind::BadResponse, "Empty response"));
-        }
-        if utf16_len(&corrected) > utf16_len(&req.text) * 4 + 40 {
-            return Err(EngineError::new(EngineErrorKind::BadResponse, "Response far longer than input"));
-        }
-        let notes = if req.explain && corrected != req.text { parse_notes(&raw) } else { vec![] };
-        Ok(CheckResult { original: req.text.clone(), corrected, notes: (!notes.is_empty()).then_some(notes) })
+        finish_check(req, &raw)
     }
 
     pub async fn test_connection(&self) -> ConnectionStatus {
@@ -589,6 +635,13 @@ mod tests {
         assert_eq!(e.check(&explain).await.unwrap().notes, Some(vec!["has → have: chủ ngữ".to_string()]));
         assert_eq!(e.check(&req("I has a cat.")).await.unwrap().notes, None);
         assert_eq!(e.check(&CheckRequest { explain: true, ..req("I have a cat.") }).await.unwrap().notes, None);
+    }
+
+    #[test]
+    fn engine_follows_the_provider_setting() {
+        assert!(matches!(Engine::from_settings(&Settings::default(), None), Engine::Openai(_)));
+        let cli = Settings { provider: Provider::ClaudeCli, ..Settings::default() };
+        assert!(matches!(Engine::from_settings(&cli, None), Engine::ClaudeCli(_)));
     }
 
     #[tokio::test]

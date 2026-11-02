@@ -1,3 +1,4 @@
+pub mod claude_cli;
 pub mod diff;
 pub mod engine;
 pub mod insights;

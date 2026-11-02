@@ -17,6 +17,17 @@ pub enum Mod {
     Shift,
 }
 
+/// Which engine fixes the text.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Provider {
+    /// Any OpenAI-compatible endpoint (`endpoint`, `model`, Keychain API key).
+    #[default]
+    Openai,
+    /// The local `claude` CLI in non-interactive mode (`claudeModel`, `claudePath`).
+    ClaudeCli,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Hotkey {
     pub key: String, // A-Z
@@ -39,6 +50,9 @@ pub struct Settings {
     pub quick_fix: bool, // hotkey replaces at once, no popover (⌘Z undoes)
     pub explain_lang: String, // language of the per-fix reasons
     pub first_run_acknowledged: bool,
+    pub provider: Provider,
+    pub claude_model: String, // --model for the claude CLI
+    pub claude_path: String,  // claude CLI binary; empty finds it in the usual install places
 }
 
 impl Default for Settings {
@@ -68,6 +82,9 @@ impl Default for Settings {
             quick_fix: false,
             explain_lang: "Vietnamese".into(),
             first_run_acknowledged: false,
+            provider: Provider::Openai,
+            claude_model: "haiku".into(),
+            claude_path: String::new(),
         }
     }
 }
@@ -122,7 +139,19 @@ pub fn normalize_settings(raw: &Value) -> Settings {
         quick_fix: is("quickFix", true),
         explain_lang: str_or("explainLang", d.explain_lang),
         first_run_acknowledged: is("firstRunAcknowledged", true),
+        provider: r.get("provider").and_then(|p| Provider::deserialize(p).ok()).unwrap_or(d.provider),
+        claude_model: str_or("claudeModel", d.claude_model),
+        claude_path: str_or("claudePath", d.claude_path),
     }
+}
+
+/// `patch` (camelCase keys) merged over `base` and normalized; unknown keys are dropped.
+pub fn with_patch(base: &Settings, patch: Value) -> Settings {
+    let mut merged = serde_json::to_value(base).expect("settings serialize");
+    if let (Value::Object(m), Value::Object(p)) = (&mut merged, patch) {
+        m.extend(p);
+    }
+    normalize_settings(&merged)
 }
 
 type Listener = Box<dyn Fn(&Settings) + Send + Sync>;
@@ -150,11 +179,7 @@ impl SettingsStore {
 
     /// `patch` is merged over the current settings JSON (camelCase keys) and normalized; unknown keys are dropped.
     pub fn update(&mut self, patch: Value) -> io::Result<Settings> {
-        let mut merged = serde_json::to_value(&self.data)?;
-        if let (Value::Object(m), Value::Object(p)) = (&mut merged, patch) {
-            m.extend(p);
-        }
-        self.data = normalize_settings(&merged);
+        self.data = with_patch(&self.data, patch);
         fs::create_dir_all(&self.dir)?;
         let tmp = self.dir.join("settings.json.tmp");
         fs::write(&tmp, serde_json::to_string_pretty(&self.data)? + "\n")?;
@@ -286,7 +311,7 @@ mod tests {
         let dir = TempDir::new();
         let mut s = SettingsStore::new(dir.path());
         s.update(json!({ "excludedApps": [], "hotkey": { "key": "k", "mods": ["cmd"] } })).unwrap();
-        let expected = "{\n  \"endpoint\": \"http://localhost:20128/v1\",\n  \"model\": \"xpiki/gpt-6.1-sol\",\n  \"timeoutMs\": 10000,\n  \"dictionary\": [],\n  \"excludedApps\": [],\n  \"hotkey\": {\n    \"key\": \"K\",\n    \"mods\": [\n      \"cmd\"\n    ]\n  },\n  \"paused\": false,\n  \"explain\": true,\n  \"autoCheck\": false,\n  \"quickFix\": false,\n  \"explainLang\": \"Vietnamese\",\n  \"firstRunAcknowledged\": false\n}\n";
+        let expected = "{\n  \"endpoint\": \"http://localhost:20128/v1\",\n  \"model\": \"xpiki/gpt-6.1-sol\",\n  \"timeoutMs\": 10000,\n  \"dictionary\": [],\n  \"excludedApps\": [],\n  \"hotkey\": {\n    \"key\": \"K\",\n    \"mods\": [\n      \"cmd\"\n    ]\n  },\n  \"paused\": false,\n  \"explain\": true,\n  \"autoCheck\": false,\n  \"quickFix\": false,\n  \"explainLang\": \"Vietnamese\",\n  \"firstRunAcknowledged\": false,\n  \"provider\": \"openai\",\n  \"claudeModel\": \"haiku\",\n  \"claudePath\": \"\"\n}\n";
         assert_eq!(fs::read_to_string(dir.path().join("settings.json")).unwrap(), expected);
         assert!(!dir.path().join("settings.json.tmp").exists());
     }
@@ -305,6 +330,22 @@ mod tests {
     fn invalid_hotkey_falls_back() {
         assert_eq!(normalize_settings(&json!({ "hotkey": { "key": "??", "mods": [] } })).hotkey, Settings::default().hotkey);
         assert_eq!(normalize_settings(&json!({ "hotkey": { "key": "a", "mods": ["cmd", "meta"] } })).hotkey, Settings::default().hotkey);
+    }
+
+    #[test]
+    fn engine_defaults_to_openai_with_claude_cli_fields_ready() {
+        let d = Settings::default();
+        assert_eq!(d.provider, Provider::Openai);
+        assert_eq!(d.claude_model, "haiku");
+        assert_eq!(d.claude_path, "");
+    }
+
+    #[test]
+    fn reads_claude_cli_provider_and_falls_back_on_unknown() {
+        let n = normalize_settings(&json!({ "provider": "claudeCli", "claudeModel": " sonnet ", "claudePath": "/opt/claude" }));
+        assert_eq!((n.provider, n.claude_model.as_str(), n.claude_path.as_str()), (Provider::ClaudeCli, "sonnet", "/opt/claude"));
+        let n = normalize_settings(&json!({ "provider": "gemini", "claudeModel": "", "claudePath": 3 }));
+        assert_eq!((n.provider, n.claude_model.as_str(), n.claude_path.as_str()), (Provider::Openai, "haiku", ""));
     }
 
     #[test]
