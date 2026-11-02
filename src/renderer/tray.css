@@ -119,6 +119,7 @@ ins { color: var(--success); text-decoration: none; font-weight: 600; }
 #pending .bar button { height: 26px; padding: 0 12px; }
 
 .form { display: flex; flex-direction: column; gap: 10px; }
+.form .fields { display: contents; }
 .field { display: flex; flex-direction: column; gap: 4px; font-size: 11px; font-weight: 500; color: var(--fg-2); }
 .split { display: flex; justify-content: space-between; }
 .field input, .inline input { width: 100%; min-width: 0; }

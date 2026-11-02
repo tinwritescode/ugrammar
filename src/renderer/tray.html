@@ -65,13 +65,21 @@
 
   <div class="view" id="setupView">
     <div class="section">
-      <div class="label"><span>Engine</span><span class="aside">OpenAI-compatible</span></div>
+      <div class="label"><span>Engine</span>
+        <span class="popup"><select id="provider" aria-label="Engine"><option value="openai">OpenAI-compatible</option><option value="claudeCli">Claude CLI</option></select><svg viewBox="0 0 24 24"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div>
       <section class="group pad form">
-        <label class="field">Endpoint<input id="endpoint" spellcheck="false"></label>
-        <label class="field">Model<input id="model" spellcheck="false"></label>
-        <label class="field"><span class="split"><span>API key</span><span class="ok" id="keyState"></span></span><input id="apiKey" type="password" placeholder="Để trống nếu không cần" autocomplete="off"></label>
+        <div class="fields" data-provider="openai">
+          <label class="field">Endpoint<input id="endpoint" spellcheck="false"></label>
+          <label class="field">Model<input id="model" spellcheck="false"></label>
+          <label class="field"><span class="split"><span>API key</span><span class="ok" id="keyState"></span></span><input id="apiKey" type="password" placeholder="Để trống nếu không cần" autocomplete="off"></label>
+        </div>
+        <div class="fields" data-provider="claudeCli">
+          <label class="field">Model<input id="claudeModel" spellcheck="false" placeholder="haiku"></label>
+          <label class="field">Đường dẫn claude<input id="claudePath" spellcheck="false" placeholder="Tự tìm (~/.local/bin/claude…)"></label>
+        </div>
         <div class="inline"><button id="test">Kiểm tra kết nối</button><span id="testResult"></span></div>
-        <p class="foot">Cần license? <a id="license" href="#">Lấy tại tyvn.online</a></p>
+        <p class="foot" data-provider="openai">Cần license? <a id="license" href="#">Lấy tại tyvn.online</a></p>
+        <p class="foot" data-provider="claudeCli">Chạy <code>claude -p</code> trên máy này, dùng tài khoản Claude Code đã đăng nhập.</p>
       </section>
     </div>
 

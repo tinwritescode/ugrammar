@@ -15,7 +15,7 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut}
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_updater::UpdaterExt;
 use tokio::sync::{mpsc, oneshot};
-use ugrammar_core::engine::{CheckRequest, OpenAICompatibleEngine, OpenAIConfig, Tone};
+use ugrammar_core::engine::{CheckRequest, Engine, Tone};
 use ugrammar_core::insights::InsightStore;
 use ugrammar_core::settings::{Mod, Settings, SettingsStore};
 use ugrammar_core::text::{to_u16, utf16_len};
@@ -220,7 +220,9 @@ impl Ctx {
         };
         let cur = self.status.lock().unwrap().clone();
         self.set_status(if matches!(cur.kind, StatusKind::Paused | StatusKind::Idle) { Status::of(StatusKind::Idle) } else { cur });
-        let engine = |s: &Settings| (s.endpoint.clone(), s.model.clone(), s.dictionary.clone(), s.explain, s.explain_lang.clone());
+        let engine = |s: &Settings| {
+            (s.provider, s.endpoint.clone(), s.model.clone(), s.claude_model.clone(), s.claude_path.clone(), s.dictionary.clone(), s.explain, s.explain_lang.clone())
+        };
         if engine(&before) != engine(&cfg) {
             self.auto.lock().unwrap().clear_cache(); // old answers came from another engine setup
         }
@@ -261,10 +263,9 @@ impl Ctx {
     }
 
     async fn check_text(&self, text: String, explain: bool, tone: Option<Tone>, min_timeout_ms: u64) -> Result<(String, Vec<String>), String> {
-        let s = self.settings();
-        let cfg = OpenAIConfig { endpoint: s.endpoint, model: s.model, timeout_ms: s.timeout_ms.max(min_timeout_ms) };
+        let s = Settings { timeout_ms: self.settings().timeout_ms.max(min_timeout_ms), ..self.settings() };
+        let engine = Engine::from_settings(&s, self.api_key().await);
         let req = CheckRequest { text, dictionary: s.dictionary, explain, explain_lang: Some(s.explain_lang), tone };
-        let engine = OpenAICompatibleEngine::new(cfg, self.api_key().await);
         engine.check(&req).await.map(|r| (r.corrected, r.notes.unwrap_or_default())).map_err(|e| e.message)
     }
 

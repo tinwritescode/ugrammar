@@ -5,6 +5,7 @@ Menu-bar grammar fixer for macOS. Select text anywhere, press ⌥⌘G, review th
 - `bun install && bun run dev` builds the Swift helper (`helper/`), bundles the web UI, and launches the Tauri app.
 - `bun run test` runs the Rust tests (`core/` and `src-tauri/`). `bun run typecheck` checks the UI.
 - Engine: any OpenAI-compatible endpoint (default `http://localhost:20128/v1`, model `xpiki/gpt-6.1-sol`).
+  Or pick **Claude CLI** in Cài đặt: each fix runs `claude -p --output-format json` (no tools, no MCP, no saved session) with the logged-in Claude Code account. `claudeModel` defaults to `haiku`; `claudePath` empty finds `claude` on PATH, `~/.local/bin`, `~/.claude/local`, Homebrew. Live test: `UGRAMMAR_LIVE_CLAUDE=1 cargo test --manifest-path core/Cargo.toml live_claude`.
 - Settings: `~/Library/Application Support/ugrammar/settings.json`. The API key lives in the Keychain.
 - Set `PROOFY_DEBUG=1` to log outcomes (never text) to `/tmp/proofy-debug.log`.
 - See `TESTING.md`, `SPIKE.md`; design decisions in `~/grammar-app-decisions.md`.

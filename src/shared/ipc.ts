@@ -1,5 +1,6 @@
 export type DiffOp = { type: "equal" | "delete" | "insert"; text: string };
 export type Tone = "formal" | "friendly" | "short";
+export type Provider = "openai" | "claudeCli";
 export type StatusKind = "idle" | "checking" | "paused" | "error" | "needs_permission";
 
 export interface Hotkey {
@@ -20,7 +21,14 @@ export interface Settings {
   quickFix: boolean;
   explainLang: string;
   firstRunAcknowledged: boolean;
+  provider: Provider;
+  claudeModel: string;
+  /** Empty: the app finds `claude` itself. */
+  claudePath: string;
 }
+
+/** Engine settings typed in the setup view, tested before they are saved. */
+export type EngineDraft = Pick<Settings, "provider" | "endpoint" | "model" | "claudeModel" | "claudePath">;
 
 export interface PopoverPayload {
   kind: "diff" | "message" | "loading";
@@ -86,7 +94,7 @@ export interface ProofyApi {
   clearInsights(): Promise<void>;
   saveSettings(patch: Partial<Settings>): Promise<void>;
   setApiKey(key: string): Promise<void>;
-  testConnection(draft: { endpoint: string; model: string; apiKey?: string }): Promise<TestResult>;
+  testConnection(draft: { settings: EngineDraft; apiKey?: string }): Promise<TestResult>;
   pickApp(): Promise<string | null>;
   appInfo(ids: string[]): Promise<AppInfo[]>;
   getTray(): Promise<TrayState>;

@@ -22,7 +22,7 @@ fn handle(url: &Url) {
     let Some(key) = license_from(url) else { return };
     tauri::async_runtime::spawn(async move {
         let c = ctx();
-        c.update_settings(serde_json::json!({ "endpoint": ENDPOINT, "model": "ugrammar" }));
+        c.update_settings(serde_json::json!({ "provider": "openai", "endpoint": ENDPOINT, "model": "ugrammar" }));
         c.set_api_key(&key).await;
         c.refresh_tray();
         c.open_panel().await;

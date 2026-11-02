@@ -1,7 +1,7 @@
 import { proofy } from "./bridge";
 import { el } from "./dom";
 import { diffNodes, fixCount, note } from "./fix";
-import type { AppInfo, Hotkey, PendingFix, Settings, TrayState, UpdateNote } from "../shared/ipc";
+import type { AppInfo, Hotkey, PendingFix, Provider, Settings, TrayState, UpdateNote } from "../shared/ipc";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const panel = $("panel");
@@ -35,6 +35,23 @@ const MINUS_ICON = '<circle cx="12" cy="12" r="9"/><path d="M8 12h8"/>';
 
 function host(endpoint: string) {
   try { return new URL(endpoint).host; } catch { return endpoint; }
+}
+
+const PROVIDERS: Record<Provider, true> = { openai: true, claudeCli: true };
+const isProvider = (v: string): v is Provider => Object.hasOwn(PROVIDERS, v);
+const providerSel = $<HTMLSelectElement>("provider");
+
+/** Shows the fields of the engine picked in the select (it may not be saved yet). */
+function showProviderFields() {
+  for (const e of document.querySelectorAll<HTMLElement>("[data-provider]")) e.hidden = e.dataset.provider !== providerSel.value;
+}
+
+function engineLabel(cfg: Settings): { text: string; title: string } {
+  switch (cfg.provider) {
+    case "openai": return { text: `${cfg.model} · ${host(cfg.endpoint)}`, title: cfg.endpoint };
+    case "claudeCli": return { text: `${cfg.claudeModel} · Claude CLI`, title: cfg.claudePath || "claude" };
+    default: { const _exhaustive: never = cfg.provider; return _exhaustive; }
+  }
 }
 
 /** Live updates must not clobber a field the user is typing in. */
@@ -205,12 +222,17 @@ function render(s: TrayState) {
         el("span", { className: "pair" }, el("del", {}, i.from || "∅"), el("span", { className: "arrow" }, " → "), el("ins", {}, i.to || "∅")),
         el("span", { className: "count" }, `${i.count} lần`)))
     : [el("li", { className: "empty" }, "Chưa có lỗi lặp lại.")]));
-  $("engine").textContent = `${cfg.model} · ${host(cfg.endpoint)}`;
-  $("engine").title = cfg.endpoint;
+  const engine = engineLabel(cfg);
+  $("engine").textContent = engine.text;
+  $("engine").title = engine.title;
   if (![...langSel.options].some((o) => o.value === cfg.explainLang)) langSel.add(new Option(cfg.explainLang, cfg.explainLang));
   setValue("explainLang", cfg.explainLang);
   setValue("endpoint", cfg.endpoint);
   setValue("model", cfg.model);
+  setValue("provider", cfg.provider);
+  setValue("claudeModel", cfg.claudeModel);
+  setValue("claudePath", cfg.claudePath);
+  showProviderFields();
   $("keyState").textContent = s.hasApiKey ? "Đã lưu trong Keychain" : "";
   renderRecorder();
   renderTags("words", cfg.dictionary, (w) => save({ dictionary: cfg.dictionary.filter((x) => x !== w) }));
@@ -265,7 +287,12 @@ for (const c of document.querySelectorAll<HTMLInputElement>(".switch[data-key]")
 }
 
 langSel.onchange = () => save({ explainLang: langSel.value });
-for (const id of ["endpoint", "model"] as const) {
+providerSel.onchange = () => {
+  showProviderFields();
+  resize();
+  if (isProvider(providerSel.value)) save({ provider: providerSel.value });
+};
+for (const id of ["endpoint", "model", "claudeModel", "claudePath"] as const) {
   $<HTMLInputElement>(id).onchange = (e) => save({ [id]: (e.target as HTMLInputElement).value });
 }
 $<HTMLInputElement>("apiKey").onchange = async (e) => {
@@ -278,10 +305,16 @@ $("test").onclick = async () => {
   const out = $("testResult");
   out.className = "pending";
   out.textContent = "Đang thử…";
+  const value = (id: string) => $<HTMLInputElement>(id).value;
   const r = await proofy.testConnection({
-    endpoint: $<HTMLInputElement>("endpoint").value,
-    model: $<HTMLInputElement>("model").value,
-    apiKey: $<HTMLInputElement>("apiKey").value || undefined,
+    settings: {
+      provider: isProvider(providerSel.value) ? providerSel.value : "openai",
+      endpoint: value("endpoint"),
+      model: value("model"),
+      claudeModel: value("claudeModel"),
+      claudePath: value("claudePath"),
+    },
+    apiKey: value("apiKey") || undefined,
   });
   out.className = r.ok ? "ok" : "bad";
   out.textContent = (r.ok ? "✓ " : "✕ ") + r.message;

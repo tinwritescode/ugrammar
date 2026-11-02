@@ -6,7 +6,8 @@ use std::time::Duration;
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 use tokio::sync::oneshot;
-use ugrammar_core::engine::{ConnectionStatus, OpenAICompatibleEngine, OpenAIConfig};
+use ugrammar_core::engine::{ConnectionStatus, Engine};
+use ugrammar_core::settings::with_patch;
 
 // Commands that touch windows are async so they run off the main thread.
 
@@ -61,25 +62,26 @@ pub async fn set_api_key(key: String) {
     c.refresh_tray();
 }
 
+/// Engine fields typed in the setup view, not saved yet.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Draft {
-    endpoint: String,
-    model: String,
+    /// Settings keys (camelCase); a blank value keeps the saved one.
+    #[serde(default)]
+    settings: serde_json::Map<String, Value>,
     api_key: Option<String>,
 }
 
 #[tauri::command]
 pub async fn test_connection(draft: Draft) -> ConnectionStatus {
     let c = ctx();
-    let s = c.settings();
     let key = match draft.api_key.filter(|k| !k.is_empty()) {
         Some(k) => Some(k),
         None => c.api_key().await,
     };
-    let or = |v: &str, fallback: String| if v.trim().is_empty() { fallback } else { v.trim().to_string() };
-    let cfg = OpenAIConfig { endpoint: or(&draft.endpoint, s.endpoint), model: or(&draft.model, s.model), timeout_ms: s.timeout_ms };
-    let r = OpenAICompatibleEngine::new(cfg, key).test_connection().await;
+    let typed = draft.settings.into_iter().filter(|(_, v)| v.as_str().is_none_or(|s| !s.trim().is_empty())).collect();
+    let s = with_patch(&c.settings(), Value::Object(typed));
+    let r = Engine::from_settings(&s, key).test_connection().await;
     if r.ok {
         c.set_status(Status::of(StatusKind::Idle));
     }
