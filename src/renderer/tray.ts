@@ -1,6 +1,7 @@
 import { proofy } from "./bridge";
 import { el } from "./dom";
 import { diffNodes, fixCount, note } from "./fix";
+import { mascot, type Mood } from "./mascot";
 import type { AppInfo, Hotkey, PendingFix, Provider, Settings, TrayState, UpdateNote } from "../shared/ipc";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -10,7 +11,26 @@ const STATUS_TEXT: Record<TrayState["status"], string> = {
   idle: "Sẵn sàng", checking: "Đang kiểm tra…", paused: "Đã tạm dừng", error: "Có lỗi", needs_permission: "Cần cấp quyền",
 };
 
+const MOOD: Record<TrayState["status"], Mood> = {
+  idle: "reading", checking: "checking", paused: "asleep", error: "confused", needs_permission: "key",
+};
+
 let state: TrayState | null = null;
+let shownMood: Mood | null = null;
+
+/** The owl card at the top of the main view. The mascot is only swapped when its mood changes, so its animation keeps running. */
+function renderHero(s: TrayState) {
+  const mood = MOOD[s.status];
+  if (mood !== shownMood) {
+    $("mascot").replaceChildren(mascot(mood, 80));
+    shownMood = mood;
+  }
+  $("heroTitle").textContent = STATUS_TEXT[s.status];
+  const note = s.status === "error" ? s.message ?? "" : s.status === "paused" ? "Cú đang ngủ. Bật lại khi cần." : s.status === "checking" ? "Đang đọc câu của bạn…" : "";
+  $("heroHint").hidden = s.status !== "idle";
+  $("heroNote").hidden = !note;
+  $("heroNote").textContent = note;
+}
 
 // Values go into the prompt as-is; labels are what the user reads.
 const LANGS: Record<string, string> = {
@@ -209,6 +229,7 @@ function render(s: TrayState) {
   $("statusText").textContent = s.message && s.status === "error" ? `${STATUS_TEXT.error} — ${s.message}` : STATUS_TEXT[s.status];
   $<HTMLInputElement>("power").checked = !cfg.paused;
   $("hotkey").replaceChildren(...keycaps(s.hotkey));
+  renderHero(s);
   $("perm").hidden = s.status !== "needs_permission";
   $("update").hidden = !s.update;
   $("updateText").textContent = `Bản ${s.update ?? ""} đã cài xong.`;

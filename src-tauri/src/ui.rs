@@ -100,7 +100,7 @@ pub fn tray_rect(app: &AppHandle) -> Option<Area> {
 }
 
 /// Matches the 12px corners of the tray panel and popover card in the web UI.
-const CORNER_RADIUS: f64 = 12.0;
+const CORNER_RADIUS: f64 = 18.0;
 
 /// Non-activating, never-key panel: clicks reach it while the app being typed in keeps focus.
 /// Main thread only.
