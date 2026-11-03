@@ -1,6 +1,8 @@
 export type DiffOp = { type: "equal" | "delete" | "insert"; text: string };
 export type Tone = "formal" | "friendly" | "short";
 export type Provider = "openai" | "claudeCli";
+/** UI language. */
+export type Lang = "en" | "vi";
 export type StatusKind = "idle" | "checking" | "paused" | "error" | "needs_permission";
 
 export interface Hotkey {
@@ -25,6 +27,8 @@ export interface Settings {
   claudeModel: string;
   /** Empty: the app finds `claude` itself. */
   claudePath: string;
+  /** Null until the user picks one on launch. */
+  language: Lang | null;
 }
 
 /** Engine settings typed in the setup view, tested before they are saved. */
@@ -40,6 +44,7 @@ export interface PopoverPayload {
   notes?: string[];
   /** Esc dismisses it. */
   esc: boolean;
+  lang: Lang;
 }
 
 export interface Insight {

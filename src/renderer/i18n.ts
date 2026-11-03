@@ -1,0 +1,202 @@
+import type { Lang, StatusKind, UpdateNote } from "../shared/ipc";
+
+/** Words in the HTML: `data-i18n` sets text, `data-i18n-label` sets title and aria-label, `data-i18n-ph` sets placeholder. */
+const enHtml = {
+  back: "Back",
+  settings: "Settings",
+  power: "On / pause",
+  hintBefore: "Select text and press",
+  hintAfter: "to fix",
+  pending: "To fix",
+  permText: "Accessibility permission is needed to read and fix text.",
+  grant: "Grant access",
+  restart: "Restart",
+  autoCheck: "Check as I type",
+  modeOff: "Off",
+  modePopup: "Show at once",
+  rewrite: "Rewrite selection",
+  formal: "Formal",
+  friendly: "Friendly",
+  short: "Short",
+  quickFix: "Fix at once, no preview",
+  explain: "Explain each fix",
+  explainLang: "Explanation language",
+  insights: "Common mistakes",
+  clear: "Clear",
+  localOnly: "Stored on this Mac only.",
+  language: "Language",
+  keyPlaceholder: "Leave empty if not needed",
+  claudePath: "claude path",
+  claudePathPh: "Find it for me (~/.local/bin/claude…)",
+  test: "Test connection",
+  needLicense: "Need a license?",
+  getLicense: "Get one at tyvn.online",
+  claudeNoteBefore: "Runs",
+  claudeNoteAfter: "on this Mac with your signed-in Claude Code account.",
+  shortcuts: "Shortcuts",
+  fixRow: "Fix",
+  recorderLabel: "Record the fix shortcut",
+  rewriteRow: "Rewrite",
+  fixed: "Fixed",
+  recHint: "Use at least one of ⌘ ⌥ ⌃. Esc to cancel.",
+  dictionary: "Dictionary",
+  dictAside: "AI leaves these words alone",
+  newWord: "Add a word, press ↩",
+  excluded: "Ignored apps",
+  excludedAside: "Text is never read",
+  pickApp: "Choose app…",
+  quit: "Quit",
+};
+type HtmlKey = keyof typeof enHtml;
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+const en = {
+  html: enHtml,
+  status: { idle: "Ready", checking: "Checking…", paused: "Paused", error: "Something went wrong", needs_permission: "Needs permission" } satisfies Record<StatusKind, string>,
+  asleepNote: "The owl is asleep. Turn it back on when you need it.",
+  readingNote: "Reading your sentence…",
+  remove: "Remove",
+  removeWord: (w: string) => `Remove ${w}`,
+  removeApp: "Remove from the list",
+  removeAppLabel: (name: string) => `Remove ${name} from the list`,
+  showLess: "Show less",
+  showMore: (n: number) => `Show ${n} more`,
+  sentences: (n: number) => plural(n, "sentence", "sentences"),
+  fixes: (n: number) => plural(n, "fix", "fixes"),
+  times: (n: number) => `${n}×`,
+  dismiss: "Dismiss",
+  apply: "Apply",
+  checkUpdates: "Check for updates",
+  updateButton: { checking: "Checking…", downloading: "Downloading…" } satisfies Partial<Record<UpdateNote, string>>,
+  updateNote: {
+    up_to_date: "You have the latest version",
+    failed: "Could not check. Try again later.",
+    unsupported: "Only the packaged app can check.",
+    checking: "Checking…",
+    downloading: "Downloading the new version…",
+  } satisfies Record<UpdateNote, string>,
+  autoUpdate: "Checks every 6 hours",
+  recording: "Press a shortcut…",
+  noInsights: "No repeated mistakes yet.",
+  installed: (v: string) => `Version ${v} is installed.`,
+  keySaved: "Saved in Keychain",
+  testing: "Testing…",
+  // Values go into the prompt as-is; these are the labels the user reads.
+  explainLangs: {
+    Vietnamese: "Vietnamese", English: "English", Spanish: "Spanish", French: "French", German: "German",
+    Portuguese: "Portuguese", Japanese: "Japanese", Korean: "Korean", Chinese: "Chinese",
+  },
+  owlFixed: (n: number) => `Owl fixed ${plural(n, "spot", "spots")}`,
+  inApp: (name: string) => `In ${name}`,
+  hintApply: "apply",
+  hintDismiss: "dismiss",
+  checking: "Checking…",
+};
+export type Dict = typeof en;
+
+const vi: Dict = {
+  html: {
+    back: "Quay lại",
+    settings: "Cài đặt",
+    power: "Bật / tạm dừng",
+    hintBefore: "Chọn chữ rồi bấm",
+    hintAfter: "để sửa",
+    pending: "Chờ sửa",
+    permText: "Cần quyền Accessibility để đọc và sửa chữ.",
+    grant: "Cấp quyền",
+    restart: "Khởi động lại",
+    autoCheck: "Tự kiểm tra khi gõ",
+    modeOff: "Tắt",
+    modePopup: "Hiện ngay",
+    rewrite: "Viết lại đoạn đã chọn",
+    formal: "Trang trọng",
+    friendly: "Thân thiện",
+    short: "Ngắn gọn",
+    quickFix: "Sửa ngay, không xem trước",
+    explain: "Giải thích từng lỗi",
+    explainLang: "Ngôn ngữ giải thích",
+    insights: "Lỗi hay gặp",
+    clear: "Xoá",
+    localOnly: "Chỉ lưu trên máy này.",
+    language: "Ngôn ngữ",
+    keyPlaceholder: "Để trống nếu không cần",
+    claudePath: "Đường dẫn claude",
+    claudePathPh: "Tự tìm (~/.local/bin/claude…)",
+    test: "Kiểm tra kết nối",
+    needLicense: "Cần license?",
+    getLicense: "Lấy tại tyvn.online",
+    claudeNoteBefore: "Chạy",
+    claudeNoteAfter: "trên máy này, dùng tài khoản Claude Code đã đăng nhập.",
+    shortcuts: "Phím tắt",
+    fixRow: "Sửa lỗi",
+    recorderLabel: "Ghi phím tắt sửa lỗi",
+    rewriteRow: "Viết lại",
+    fixed: "Cố định",
+    recHint: "Cần ít nhất một phím ⌘ ⌥ ⌃. Esc để huỷ.",
+    dictionary: "Từ điển",
+    dictAside: "AI không sửa các từ này",
+    newWord: "Thêm từ, nhấn ↩",
+    excluded: "App bỏ qua",
+    excludedAside: "Không bao giờ đọc chữ",
+    pickApp: "Chọn app…",
+    quit: "Thoát",
+  },
+  status: { idle: "Sẵn sàng", checking: "Đang kiểm tra…", paused: "Đã tạm dừng", error: "Có lỗi", needs_permission: "Cần cấp quyền" },
+  asleepNote: "Cú đang ngủ. Bật lại khi cần.",
+  readingNote: "Đang đọc câu của bạn…",
+  remove: "Xoá",
+  removeWord: (w) => `Xoá ${w}`,
+  removeApp: "Bỏ khỏi danh sách",
+  removeAppLabel: (name) => `Bỏ ${name} khỏi danh sách`,
+  showLess: "Thu gọn",
+  showMore: (n) => `Xem thêm ${n}`,
+  sentences: (n) => `${n} câu`,
+  fixes: (n) => `${n} lỗi`,
+  times: (n) => `${n} lần`,
+  dismiss: "Bỏ qua",
+  apply: "Áp dụng",
+  checkUpdates: "Kiểm tra cập nhật",
+  updateButton: { checking: "Đang kiểm tra…", downloading: "Đang tải bản mới…" },
+  updateNote: {
+    up_to_date: "Đã là bản mới nhất",
+    failed: "Không kiểm tra được. Thử lại sau.",
+    unsupported: "Chỉ kiểm tra được trong bản đã đóng gói.",
+    checking: "Đang kiểm tra…",
+    downloading: "Đang tải bản mới…",
+  },
+  autoUpdate: "Tự kiểm tra mỗi 6 giờ",
+  recording: "Nhấn tổ hợp phím…",
+  noInsights: "Chưa có lỗi lặp lại.",
+  installed: (v) => `Bản ${v} đã cài xong.`,
+  keySaved: "Đã lưu trong Keychain",
+  testing: "Đang thử…",
+  explainLangs: {
+    Vietnamese: "Tiếng Việt", English: "Tiếng Anh", Spanish: "Tiếng Tây Ban Nha", French: "Tiếng Pháp", German: "Tiếng Đức",
+    Portuguese: "Tiếng Bồ Đào Nha", Japanese: "Tiếng Nhật", Korean: "Tiếng Hàn", Chinese: "Tiếng Trung",
+  },
+  owlFixed: (n) => `Cú sửa được ${n} chỗ`,
+  inApp: (name) => `Trong ${name}`,
+  hintApply: "áp dụng",
+  hintDismiss: "bỏ qua",
+  checking: "Đang kiểm tra…",
+};
+
+const DICTS: Record<Lang, Dict> = { en, vi };
+
+/** English until the user picks a language (matches `Settings::lang` in Rust). */
+export const dict = (lang: Lang | null) => DICTS[lang ?? "en"];
+
+const isHtmlKey = (k: string | undefined): k is HtmlKey => k !== undefined && Object.hasOwn(enHtml, k);
+
+/** Fills every marked element of the page with `d`'s words. */
+export function translatePage(lang: Lang, d: Dict) {
+  document.documentElement.lang = lang;
+  for (const e of document.querySelectorAll<HTMLElement>("[data-i18n]")) if (isHtmlKey(e.dataset.i18n)) e.textContent = d.html[e.dataset.i18n];
+  for (const e of document.querySelectorAll<HTMLElement>("[data-i18n-label]")) {
+    if (!isHtmlKey(e.dataset.i18nLabel)) continue;
+    e.title = d.html[e.dataset.i18nLabel];
+    e.ariaLabel = d.html[e.dataset.i18nLabel];
+  }
+  for (const e of document.querySelectorAll<HTMLInputElement>("input[data-i18n-ph]")) if (isHtmlKey(e.dataset.i18nPh)) e.placeholder = d.html[e.dataset.i18nPh];
+}

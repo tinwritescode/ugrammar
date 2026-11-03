@@ -1,15 +1,12 @@
 import { proofy } from "./bridge";
 import { el } from "./dom";
 import { diffNodes, fixCount, note } from "./fix";
+import { dict, translatePage, type Dict } from "./i18n";
 import { mascot, type Mood } from "./mascot";
-import type { AppInfo, Hotkey, PendingFix, Provider, Settings, TrayState, UpdateNote } from "../shared/ipc";
+import type { AppInfo, Hotkey, Lang, PendingFix, Provider, Settings, TrayState, UpdateNote } from "../shared/ipc";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const panel = $("panel");
-
-const STATUS_TEXT: Record<TrayState["status"], string> = {
-  idle: "Sẵn sàng", checking: "Đang kiểm tra…", paused: "Đã tạm dừng", error: "Có lỗi", needs_permission: "Cần cấp quyền",
-};
 
 const MOOD: Record<TrayState["status"], Mood> = {
   idle: "reading", checking: "checking", paused: "asleep", error: "confused", needs_permission: "key",
@@ -17,6 +14,8 @@ const MOOD: Record<TrayState["status"], Mood> = {
 
 let state: TrayState | null = null;
 let shownMood: Mood | null = null;
+let t: Dict = dict(null);
+let shownLang: Lang | null = null;
 
 /** The owl card at the top of the main view. The mascot is only swapped when its mood changes, so its animation keeps running. */
 function renderHero(s: TrayState) {
@@ -25,20 +24,28 @@ function renderHero(s: TrayState) {
     $("mascot").replaceChildren(mascot(mood, 80));
     shownMood = mood;
   }
-  $("heroTitle").textContent = STATUS_TEXT[s.status];
-  const note = s.status === "error" ? s.message ?? "" : s.status === "paused" ? "Cú đang ngủ. Bật lại khi cần." : s.status === "checking" ? "Đang đọc câu của bạn…" : "";
+  $("heroTitle").textContent = t.status[s.status];
+  const note = s.status === "error" ? s.message ?? "" : s.status === "paused" ? t.asleepNote : s.status === "checking" ? t.readingNote : "";
   $("heroHint").hidden = s.status !== "idle";
   $("heroNote").hidden = !note;
   $("heroNote").textContent = note;
 }
 
-// Values go into the prompt as-is; labels are what the user reads.
-const LANGS: Record<string, string> = {
-  Vietnamese: "Tiếng Việt", English: "Tiếng Anh", Spanish: "Tiếng Tây Ban Nha", French: "Tiếng Pháp", German: "Tiếng Đức",
-  Portuguese: "Tiếng Bồ Đào Nha", Japanese: "Tiếng Nhật", Korean: "Tiếng Hàn", Chinese: "Tiếng Trung",
-};
 const langSel = $<HTMLSelectElement>("explainLang");
-for (const [v, label] of Object.entries(LANGS)) langSel.add(new Option(label, v));
+const uiLangSel = $<HTMLSelectElement>("language");
+const LANGS: Record<Lang, true> = { en: true, vi: true };
+const isLang = (v: string): v is Lang => Object.hasOwn(LANGS, v);
+
+/** Re-labels the page when the picked language changes; the explain-language options are rebuilt in it. */
+function setLanguage(lang: Lang | null) {
+  if (shownLang === lang && langSel.options.length) return;
+  shownLang = lang;
+  t = dict(lang);
+  translatePage(lang ?? "en", t);
+  langSel.replaceChildren(...Object.entries(t.explainLangs).map(([v, label]) => new Option(label, v)));
+  $("title").textContent = panel.dataset.view === "setup" ? t.html.settings : "ugrammar";
+}
+setLanguage(null);
 
 const save = (patch: Partial<Settings>) => void proofy.saveSettings(patch);
 
@@ -84,8 +91,8 @@ function setValue(id: string, v: string) {
 const keycaps = (label: string) => [...label].map((k) => el("kbd", {}, k));
 
 function renderTags(id: string, items: string[], onRemove: (v: string) => void) {
-  $(id).replaceChildren(...items.map((t) =>
-    el("span", { className: "tag" }, el("span", {}, t), el("button", { title: "Xoá", ariaLabel: `Xoá ${t}`, onclick: () => onRemove(t) }, svg(X_ICON)))));
+  $(id).replaceChildren(...items.map((w) =>
+    el("span", { className: "tag" }, el("span", {}, w), el("button", { title: t.remove, ariaLabel: t.removeWord(w), onclick: () => onRemove(w) }, svg(X_ICON)))));
 }
 
 // ---------- Excluded apps ----------
@@ -114,12 +121,12 @@ function renderApps(ids: string[]) {
     const info = appInfo.get(id);
     const name = el("span", { className: "name grow" }, el("span", {}, info?.name ?? id));
     if (info?.name) name.append(el("span", {}, id));
-    const remove = el("button", { title: "Bỏ khỏi danh sách", ariaLabel: `Bỏ ${info?.name ?? id} khỏi danh sách`, onclick: () => state && save({ excludedApps: state.settings.excludedApps.filter((x) => x !== id) }) }, svg(MINUS_ICON));
+    const remove = el("button", { title: t.removeApp, ariaLabel: t.removeAppLabel(info?.name ?? id), onclick: () => state && save({ excludedApps: state.settings.excludedApps.filter((x) => x !== id) }) }, svg(MINUS_ICON));
     return el("li", { title: id }, appIcon(info, id), name, remove);
   }));
   const more = $("moreApps");
   more.hidden = ids.length <= APPS_COLLAPSED;
-  more.textContent = showAllApps ? "Thu gọn" : `Xem thêm ${ids.length - APPS_COLLAPSED}`;
+  more.textContent = showAllApps ? t.showLess : t.showMore(ids.length - APPS_COLLAPSED);
 }
 
 $("moreApps").onclick = () => {
@@ -134,7 +141,7 @@ let openFix: number | null = null;
 
 function renderPending(items: PendingFix[]) {
   $("pendingSection").hidden = !items.length;
-  $("pendingCount").textContent = `${items.length} câu`;
+  $("pendingCount").textContent = t.sentences(items.length);
   $("pending").replaceChildren(...items.map((f) => {
     const expanded = f.id === openFix;
     const original = f.ops.filter((op) => op.type !== "insert").map((op) => op.text).join("");
@@ -145,14 +152,14 @@ function renderPending(items: PendingFix[]) {
     };
     const head = el("button", { className: "ghost head", ariaExpanded: String(expanded), onclick: toggle },
       el("span", { className: "grow" }, el("strong", {}, f.appName || "App"), el("span", { className: "snip" }, original)),
-      el("span", { className: "count" }, `${fixCount(f.ops)} lỗi`));
+      el("span", { className: "count" }, t.fixes(fixCount(f.ops))));
     const li = el("li", { className: expanded ? "open" : "" }, head);
     if (expanded) {
       li.append(el("div", { className: "text" }, ...diffNodes(f.ops)));
       if (f.notes.length) li.append(el("ul", { className: "notes" }, ...f.notes.map(note)));
       li.append(el("div", { className: "bar" },
-        el("button", { onclick: () => proofy.pendingAction(f.id, "dismiss") }, "Bỏ qua"),
-        el("button", { className: "primary", onclick: () => proofy.pendingAction(f.id, "accept") }, "Áp dụng")));
+        el("button", { onclick: () => proofy.pendingAction(f.id, "dismiss") }, t.dismiss),
+        el("button", { className: "primary", onclick: () => proofy.pendingAction(f.id, "accept") }, t.apply)));
     }
     return li;
   }));
@@ -160,30 +167,11 @@ function renderPending(items: PendingFix[]) {
 
 // ---------- Updates ----------
 
-const UPDATE_BUTTON: Record<UpdateNote, string> = {
-  checking: "Đang kiểm tra…",
-  downloading: "Đang tải bản mới…",
-  up_to_date: "Kiểm tra cập nhật",
-  failed: "Kiểm tra cập nhật",
-  unsupported: "Kiểm tra cập nhật",
-};
-
-function updateNoteText(note?: UpdateNote): string {
-  switch (note) {
-    case "up_to_date": return "Đã là bản mới nhất";
-    case "failed": return "Không kiểm tra được. Thử lại sau.";
-    case "unsupported": return "Chỉ kiểm tra được trong bản đã đóng gói.";
-    case "checking": return "Đang kiểm tra…";
-    case "downloading": return "Đang tải bản mới…";
-    default: return "Tự kiểm tra mỗi 6 giờ";
-  }
-}
-
 function renderUpdateCheck(note?: UpdateNote) {
   const button = $<HTMLButtonElement>("checkUpdate");
   button.disabled = note === "checking" || note === "downloading";
-  button.textContent = note ? UPDATE_BUTTON[note] : "Kiểm tra cập nhật";
-  $("updateNote").textContent = updateNoteText(note);
+  button.textContent = note === "checking" || note === "downloading" ? t.updateButton[note] : t.checkUpdates;
+  $("updateNote").textContent = note ? t.updateNote[note] : t.autoUpdate;
 }
 
 // ---------- Hotkey recorder ----------
@@ -195,7 +183,7 @@ function renderRecorder() {
   const r = $("recorder");
   r.classList.toggle("rec", recording);
   $("recHint").hidden = !recording;
-  r.replaceChildren(...(recording ? ["Nhấn tổ hợp phím…"] : keycaps(state?.hotkey ?? "")));
+  r.replaceChildren(...(recording ? [t.recording] : keycaps(state?.hotkey ?? "")));
 }
 
 function setRecording(on: boolean) {
@@ -224,15 +212,16 @@ window.addEventListener("blur", () => setRecording(false));
 function render(s: TrayState) {
   state = s;
   const cfg = s.settings;
+  setLanguage(cfg.language);
   panel.dataset.status = s.status;
   panel.dataset.paused = String(cfg.paused);
-  $("statusText").textContent = s.message && s.status === "error" ? `${STATUS_TEXT.error} — ${s.message}` : STATUS_TEXT[s.status];
+  $("statusText").textContent = s.message && s.status === "error" ? `${t.status.error} — ${s.message}` : t.status[s.status];
   $<HTMLInputElement>("power").checked = !cfg.paused;
   $("hotkey").replaceChildren(...keycaps(s.hotkey));
   renderHero(s);
   $("perm").hidden = s.status !== "needs_permission";
   $("update").hidden = !s.update;
-  $("updateText").textContent = `Bản ${s.update ?? ""} đã cài xong.`;
+  $("updateText").textContent = t.installed(s.update ?? "");
   renderUpdateCheck(s.updateNote);
   renderPending(s.pending);
   const mode = cfg.autoCheck ? "popup" : "off";
@@ -241,20 +230,21 @@ function render(s: TrayState) {
   $("insights").replaceChildren(...(s.insights.length
     ? s.insights.map((i) => el("li", { title: i.note ?? "" },
         el("span", { className: "pair" }, el("del", {}, i.from || "∅"), el("span", { className: "arrow" }, " → "), el("ins", {}, i.to || "∅")),
-        el("span", { className: "count" }, `${i.count} lần`)))
-    : [el("li", { className: "empty" }, "Chưa có lỗi lặp lại.")]));
+        el("span", { className: "count" }, t.times(i.count))))
+    : [el("li", { className: "empty" }, t.noInsights)]));
   const engine = engineLabel(cfg);
   $("engine").textContent = engine.text;
   $("engine").title = engine.title;
   if (![...langSel.options].some((o) => o.value === cfg.explainLang)) langSel.add(new Option(cfg.explainLang, cfg.explainLang));
   setValue("explainLang", cfg.explainLang);
+  setValue("language", cfg.language ?? "en");
   setValue("endpoint", cfg.endpoint);
   setValue("model", cfg.model);
   setValue("provider", cfg.provider);
   setValue("claudeModel", cfg.claudeModel);
   setValue("claudePath", cfg.claudePath);
   showProviderFields();
-  $("keyState").textContent = s.hasApiKey ? "Đã lưu trong Keychain" : "";
+  $("keyState").textContent = s.hasApiKey ? t.keySaved : "";
   renderRecorder();
   renderTags("words", cfg.dictionary, (w) => save({ dictionary: cfg.dictionary.filter((x) => x !== w) }));
   renderApps(cfg.excludedApps);
@@ -269,7 +259,7 @@ function resize() {
 function showView(v: "main" | "setup") {
   if (panel.dataset.view === v) return;
   panel.dataset.view = v;
-  $("title").textContent = v === "setup" ? "Cài đặt" : "ugrammar";
+  $("title").textContent = v === "setup" ? t.html.settings : "ugrammar";
   setRecording(false);
   panel.scrollTop = 0;
   resize();
@@ -308,6 +298,7 @@ for (const c of document.querySelectorAll<HTMLInputElement>(".switch[data-key]")
 }
 
 langSel.onchange = () => save({ explainLang: langSel.value });
+uiLangSel.onchange = () => isLang(uiLangSel.value) && save({ language: uiLangSel.value });
 providerSel.onchange = () => {
   showProviderFields();
   resize();
@@ -325,7 +316,7 @@ $<HTMLInputElement>("apiKey").onchange = async (e) => {
 $("test").onclick = async () => {
   const out = $("testResult");
   out.className = "pending";
-  out.textContent = "Đang thử…";
+  out.textContent = t.testing;
   const value = (id: string) => $<HTMLInputElement>(id).value;
   const r = await proofy.testConnection({
     settings: {

@@ -1,15 +1,15 @@
 <!doctype html>
-<html lang="vi"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; font-src 'self'; script-src 'self'; img-src data:; connect-src ipc: http://ipc.localhost">
+<html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; font-src 'self'; script-src 'self'; img-src data:; connect-src ipc: http://ipc.localhost">
 <link rel="stylesheet" href="theme.css"><link rel="stylesheet" href="tray.css"></head>
 <body>
 <main id="panel" data-view="main">
   <header>
-    <button class="icon ghost" id="back" aria-label="Quay lại" title="Quay lại"><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg></button>
+    <button class="icon ghost" id="back" data-i18n-label="back"><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg></button>
     <div class="who"><strong id="title">ugrammar</strong><span id="statusLine"><i class="dot"></i><span id="statusText"></span></span></div>
-    <button class="icon ghost" id="toSetup" aria-label="Cài đặt" title="Cài đặt">
+    <button class="icon ghost" id="toSetup" data-i18n-label="settings">
       <svg viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
     </button>
-    <input type="checkbox" class="switch lg" id="power" aria-label="Bật / tạm dừng" title="Bật / tạm dừng">
+    <input type="checkbox" class="switch lg" id="power" data-i18n-label="power">
   </header>
 
   <div class="view" id="mainView">
@@ -17,60 +17,65 @@
       <span id="mascot"></span>
       <div class="heroText">
         <strong id="heroTitle"></strong>
-        <span class="hint" id="heroHint"><span>Chọn chữ rồi bấm</span><span class="keys" id="hotkey"></span><span>để sửa</span></span>
+        <span class="hint" id="heroHint"><span data-i18n="hintBefore"></span><span class="keys" id="hotkey"></span><span data-i18n="hintAfter"></span></span>
         <span id="heroNote" hidden></span>
       </div>
     </section>
 
     <div class="section" id="pendingSection" hidden>
-      <div class="label"><span>Chờ sửa</span><span class="aside" id="pendingCount"></span></div>
+      <div class="label"><span data-i18n="pending"></span><span class="aside" id="pendingCount"></span></div>
       <ul class="group" id="pending"></ul>
     </div>
 
     <section class="banner danger" id="perm" hidden>
       <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
-      <span>Cần quyền Accessibility để đọc và sửa chữ.</span>
-      <button class="primary" id="openAX">Cấp quyền</button>
+      <span data-i18n="permText"></span>
+      <button class="primary" id="openAX" data-i18n="grant"></button>
     </section>
 
     <section class="banner info" id="update" hidden>
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v8"/><path d="m8 12 4 4 4-4"/></svg>
       <span id="updateText"></span>
-      <button class="primary" id="restart">Khởi động lại</button>
+      <button class="primary" id="restart" data-i18n="restart"></button>
     </section>
 
     <div class="section">
-      <div class="label">Tự kiểm tra khi gõ</div>
+      <div class="label" data-i18n="autoCheck"></div>
       <div class="seg" id="mode">
-        <button data-mode="off">Tắt</button>
-        <button data-mode="popup">Hiện ngay</button>
+        <button data-mode="off" data-i18n="modeOff"></button>
+        <button data-mode="popup" data-i18n="modePopup"></button>
       </div>
     </div>
 
     <div class="section">
-      <div class="label"><span>Viết lại đoạn đã chọn</span><span class="aside">⌥⌘T</span></div>
+      <div class="label"><span data-i18n="rewrite"></span><span class="aside">⌥⌘T</span></div>
       <div class="tones">
-        <button data-tone="formal"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>Trang trọng</button>
-        <button data-tone="friendly"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><path d="M9 9h.01"/><path d="M15 9h.01"/></svg>Thân thiện</button>
-        <button data-tone="short"><svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M3 12h12"/><path d="M3 18h6"/></svg>Ngắn gọn</button>
+        <button data-tone="formal"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg><span data-i18n="formal"></span></button>
+        <button data-tone="friendly"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><path d="M9 9h.01"/><path d="M15 9h.01"/></svg><span data-i18n="friendly"></span></button>
+        <button data-tone="short"><svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M3 12h12"/><path d="M3 18h6"/></svg><span data-i18n="short"></span></button>
       </div>
     </div>
 
     <section class="group">
-      <label class="row"><span class="tile"><svg viewBox="0 0 24 24"><path d="m13 2-10 12h9l-1 8 10-12h-9z"/></svg></span><span class="grow">Sửa ngay, không xem trước</span><input type="checkbox" class="switch" data-key="quickFix"></label>
-      <label class="row"><span class="tile"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span><span class="grow">Giải thích từng lỗi</span><input type="checkbox" class="switch" data-key="explain"></label>
-      <label class="row"><span class="tile"><svg viewBox="0 0 24 24"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg></span><span class="grow">Ngôn ngữ giải thích</span>
+      <label class="row"><span class="tile"><svg viewBox="0 0 24 24"><path d="m13 2-10 12h9l-1 8 10-12h-9z"/></svg></span><span class="grow" data-i18n="quickFix"></span><input type="checkbox" class="switch" data-key="quickFix"></label>
+      <label class="row"><span class="tile"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span><span class="grow" data-i18n="explain"></span><input type="checkbox" class="switch" data-key="explain"></label>
+      <label class="row"><span class="tile"><svg viewBox="0 0 24 24"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg></span><span class="grow" data-i18n="explainLang"></span>
         <span class="popup"><select id="explainLang"></select><svg viewBox="0 0 24 24"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></label>
     </section>
 
     <section class="group pad">
-      <div class="cardHead"><strong>Lỗi hay gặp</strong><button class="ghost link" id="clearInsights">Xoá</button></div>
+      <div class="cardHead"><strong data-i18n="insights"></strong><button class="ghost link" id="clearInsights" data-i18n="clear"></button></div>
       <ul id="insights"></ul>
-      <p class="foot">Chỉ lưu trên máy này.</p>
+      <p class="foot" data-i18n="localOnly"></p>
     </section>
   </div>
 
   <div class="view" id="setupView">
+    <section class="group">
+      <label class="row"><span class="tile"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span><span class="grow" data-i18n="language"></span>
+        <span class="popup"><select id="language"><option value="en">English</option><option value="vi">Tiếng Việt</option></select><svg viewBox="0 0 24 24"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></label>
+    </section>
+
     <div class="section">
       <div class="label"><span>Engine</span>
         <span class="popup"><select id="provider" aria-label="Engine"><option value="openai">OpenAI-compatible</option><option value="claudeCli">Claude CLI</option></select><svg viewBox="0 0 24 24"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div>
@@ -78,54 +83,54 @@
         <div class="fields" data-provider="openai">
           <label class="field">Endpoint<input id="endpoint" spellcheck="false"></label>
           <label class="field">Model<input id="model" spellcheck="false"></label>
-          <label class="field"><span class="split"><span>API key</span><span class="ok" id="keyState"></span></span><input id="apiKey" type="password" placeholder="Để trống nếu không cần" autocomplete="off"></label>
+          <label class="field"><span class="split"><span>API key</span><span class="ok" id="keyState"></span></span><input id="apiKey" type="password" data-i18n-ph="keyPlaceholder" autocomplete="off"></label>
         </div>
         <div class="fields" data-provider="claudeCli">
           <label class="field">Model<input id="claudeModel" spellcheck="false" placeholder="haiku"></label>
-          <label class="field">Đường dẫn claude<input id="claudePath" spellcheck="false" placeholder="Tự tìm (~/.local/bin/claude…)"></label>
+          <label class="field"><span data-i18n="claudePath"></span><input id="claudePath" spellcheck="false" data-i18n-ph="claudePathPh"></label>
         </div>
-        <div class="inline"><button id="test">Kiểm tra kết nối</button><span id="testResult"></span></div>
-        <p class="foot" data-provider="openai">Cần license? <a id="license" href="#">Lấy tại tyvn.online</a></p>
-        <p class="foot" data-provider="claudeCli">Chạy <code>claude -p</code> trên máy này, dùng tài khoản Claude Code đã đăng nhập.</p>
+        <div class="inline"><button id="test" data-i18n="test"></button><span id="testResult"></span></div>
+        <p class="foot" data-provider="openai"><span data-i18n="needLicense"></span> <a id="license" href="#" data-i18n="getLicense"></a></p>
+        <p class="foot" data-provider="claudeCli"><span data-i18n="claudeNoteBefore"></span> <code>claude -p</code> <span data-i18n="claudeNoteAfter"></span></p>
       </section>
     </div>
 
     <div class="section">
-      <div class="label">Phím tắt</div>
+      <div class="label" data-i18n="shortcuts"></div>
       <section class="group">
-        <div class="row"><span class="grow">Sửa lỗi</span><button class="recorder" id="recorder" aria-label="Ghi phím tắt sửa lỗi"></button></div>
-        <div class="row"><span class="grow">Viết lại</span><span class="aside">Cố định</span><span class="recorder fixed"><kbd>⌥</kbd><kbd>⌘</kbd><kbd>T</kbd></span></div>
+        <div class="row"><span class="grow" data-i18n="fixRow"></span><button class="recorder" id="recorder" data-i18n-label="recorderLabel"></button></div>
+        <div class="row"><span class="grow" data-i18n="rewriteRow"></span><span class="aside" data-i18n="fixed"></span><span class="recorder fixed"><kbd>⌥</kbd><kbd>⌘</kbd><kbd>T</kbd></span></div>
       </section>
-      <p class="note" id="recHint" hidden>Cần ít nhất một phím ⌘ ⌥ ⌃. Esc để huỷ.</p>
+      <p class="note" id="recHint" hidden data-i18n="recHint"></p>
     </div>
 
     <div class="section">
-      <div class="label"><span>Từ điển</span><span class="aside">AI không sửa các từ này</span></div>
+      <div class="label"><span data-i18n="dictionary"></span><span class="aside" data-i18n="dictAside"></span></div>
       <section class="group pad stack">
         <div class="tags" id="words"></div>
-        <input id="newWord" placeholder="Thêm từ, nhấn ↩">
+        <input id="newWord" data-i18n-ph="newWord">
       </section>
     </div>
 
     <div class="section">
-      <div class="label"><span>App bỏ qua</span><span class="aside">Không bao giờ đọc chữ</span></div>
+      <div class="label"><span data-i18n="excluded"></span><span class="aside" data-i18n="excludedAside"></span></div>
       <section class="group apps">
         <ul id="apps"></ul>
         <button class="ghost link more" id="moreApps" hidden></button>
-        <div class="inline add"><input id="newApp" placeholder="com.example.app" spellcheck="false"><button id="pickApp">Chọn app…</button></div>
+        <div class="inline add"><input id="newApp" placeholder="com.example.app" spellcheck="false"><button id="pickApp" data-i18n="pickApp"></button></div>
       </section>
     </div>
 
     <section class="group pad about">
       <div class="grow"><strong>ugrammar <span id="version"></span></strong><span id="updateNote"></span></div>
-      <button id="checkUpdate">Kiểm tra cập nhật</button>
+      <button id="checkUpdate"></button>
     </section>
     <p class="credit">Tín Nguyễn · <a id="github" href="#">@tinwritescode</a></p>
   </div>
 
   <footer>
     <span id="engine"></span>
-    <button class="ghost" id="quit">Thoát</button>
+    <button class="ghost" id="quit" data-i18n="quit"></button>
   </footer>
 </main>
 <script src="tray.js"></script>
