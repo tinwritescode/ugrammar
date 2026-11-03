@@ -20,7 +20,8 @@
   --field: #241f36; --field-border: #463e68;
   --seg-track: #2a2540; --seg-on: #463e68; --seg-shadow: 0 1px 2px rgba(0,0,0,.35);
   --switch-off: #463e68; --kbd: #f4dd5a; --kbd-border: #c9a92c; --on-kbd: #22185a; --knob: #2a1d6b;
-  --header: rgba(30,27,41,.92); --hover: brightness(1.1);
+  --header: rgba(30,27,41,.92);
+  --veil: rgba(255,255,255,.09); --veil-on-primary: rgba(255,255,255,.3);
   --primary: #f4dd5a; --on-primary: #22185a; --primary-tint: rgba(244,221,90,.16); --primary-fg: #f4dd5a;
   --success: #9bd88a; --success-bg: rgba(155,216,138,.15); --on-success: #10240c;
   --danger: #f7a8be; --danger-bg: rgba(242,169,196,.16);
@@ -36,7 +37,8 @@
     --field: #ffffff; --field-border: #d6cef5;
     --seg-track: #e8e4fa; --seg-on: #ffffff; --seg-shadow: 0 1px 3px rgba(34,24,90,.15);
     --switch-off: #d6cef5; --kbd: #f4dd5a; --kbd-border: #e3c842; --knob: #f4dd5a;
-    --header: rgba(245,243,255,.92); --hover: brightness(.97);
+    --header: rgba(245,243,255,.92);
+    --veil: rgba(42,29,107,.08); --veil-on-primary: rgba(255,255,255,.18);
     --primary: #2a1d6b; --on-primary: #ffffff; --primary-tint: rgba(42,29,107,.12); --primary-fg: #3b2e8c;
     --success: #2f6b2f; --success-bg: #e3f2dc; --on-success: #ffffff;
     --danger: #b3203a; --danger-bg: #fbd3e0;
@@ -54,11 +56,15 @@ button {
   border: 1.5px solid var(--ctrl-border); background: var(--ctrl); color: var(--fg);
   transition: filter .12s, background-color .12s, transform .12s; -webkit-app-region: no-drag;
 }
-button:hover { filter: var(--hover); }
+/* Anything clickable shows a hand and tints on hover. The tint is a veil over the element's own background,
+   so it works on every fill; :is() + :not() outrank the per-component background shorthands in tray.css. */
+:is(button, select, a, label.row, .switch):not(:disabled) { cursor: pointer; }
+:is(button, select, input, .switch):not(:disabled):hover { background-image: linear-gradient(var(--veil), var(--veil)); }
+button.primary, .switch:checked { --veil: var(--veil-on-primary); }
 button:active { filter: brightness(.92); transform: translateY(1px); }
 button.primary { border-color: transparent; background: var(--primary); color: var(--on-primary); }
 button.ghost { border-color: transparent; background: transparent; }
-button.ghost:hover { background: var(--row-hover); filter: none; }
+button.ghost:hover { background-color: var(--row-hover); }
 button:disabled { opacity: .5; pointer-events: none; }
 input, select {
   font: 13px var(--font-body); height: 32px; padding: 0 10px; box-sizing: border-box; border-radius: 10px;
