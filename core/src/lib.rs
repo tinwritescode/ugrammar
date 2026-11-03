@@ -1,6 +1,7 @@
 pub mod claude_cli;
 pub mod diff;
 pub mod engine;
+pub mod i18n;
 pub mod insights;
 pub mod sentence;
 pub mod settings;

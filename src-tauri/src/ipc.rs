@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use ugrammar_core::diff::DiffOp;
+use ugrammar_core::i18n::Lang;
 use ugrammar_core::insights::Insight;
 use ugrammar_core::settings::Settings;
 
@@ -29,6 +30,8 @@ pub struct PopoverPayload {
     pub notes: Option<Vec<String>>,
     /// Esc dismisses it; auto-check popups leave Esc to the app being typed in.
     pub esc: bool,
+    /// UI language; `Ctx::show_popover` sets it from settings.
+    pub lang: Lang,
 }
 
 impl PopoverPayload {
@@ -42,11 +45,12 @@ impl PopoverPayload {
             app_name,
             notes: (!notes.is_empty()).then_some(notes),
             esc: true,
+            lang: Lang::En,
         }
     }
 
     pub fn text(kind: PopoverKind, message: &str) -> Self {
-        PopoverPayload { kind, original: None, corrected: None, ops: None, message: Some(message.into()), app_name: None, notes: None, esc: false }
+        PopoverPayload { kind, original: None, corrected: None, ops: None, message: Some(message.into()), app_name: None, notes: None, esc: false, lang: Lang::En }
     }
 }
 

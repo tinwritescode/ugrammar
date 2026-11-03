@@ -2,6 +2,7 @@ use crate::helper::{Reply, Selection};
 use crate::ipc::{Choice, PopoverPayload, Status, StatusKind};
 use std::sync::atomic::{AtomicBool, Ordering};
 use ugrammar_core::engine::Tone;
+use ugrammar_core::i18n::{fill, Strings};
 use ugrammar_core::settings::Settings;
 use ugrammar_core::text::{is_js_space_char, js_trim};
 
@@ -38,19 +39,19 @@ pub trait FlowDeps {
     fn on_applied(&self, original: &str, corrected: &str, notes: &[String]);
 }
 
-fn read_error(code: &str) -> String {
+fn read_error(t: &Strings, code: &str) -> String {
     match code {
-        "excluded_app" => "Bỏ qua: app này nằm trong danh sách bỏ qua.".into(),
-        "secure_field" => "Bỏ qua: ô mật khẩu hoặc ô bảo mật.".into(),
-        "no_selection" => "Hãy chọn chữ trước.".into(),
-        other => format!("Không đọc được đoạn đã chọn ({other})."),
+        "excluded_app" => t.skip_excluded.into(),
+        "secure_field" => t.skip_secure.into(),
+        "no_selection" => t.select_first.into(),
+        other => fill(t.read_failed, &[("code", other)]),
     }
 }
 
-fn write_error(code: Option<&str>) -> String {
+fn write_error(t: &Strings, code: Option<&str>) -> String {
     match code {
-        Some("focus_changed") => "Focus changed; text not replaced.".into(),
-        other => format!("Could not replace text ({}).", other.unwrap_or("undefined")),
+        Some("focus_changed") => t.focus_changed.into(),
+        other => fill(t.write_failed, &[("code", other.unwrap_or("undefined"))]),
     }
 }
 
@@ -74,6 +75,7 @@ impl FixFlow {
 
     pub async fn run<D: FlowDeps>(&self, d: &D, tone: Option<Tone>) -> FixOutcome {
         let s = d.settings();
+        let t = s.strings();
         if s.paused {
             return FixOutcome::Paused;
         }
@@ -90,18 +92,18 @@ impl FixFlow {
                 let code = sel.error.as_deref().unwrap_or("unknown");
                 if code == "accessibility_not_trusted" {
                     d.hide_loading();
-                    d.set_status(Status { kind: StatusKind::NeedsPermission, message: Some("Grant Accessibility permission".into()) });
-                    d.notify("ugrammar needs Accessibility permission (System Settings → Privacy & Security → Accessibility).");
+                    d.set_status(Status { kind: StatusKind::NeedsPermission, message: Some(t.grant_ax.into()) });
+                    d.notify(t.needs_ax);
                     return FixOutcome::NeedsPermission;
                 }
-                d.show_message(&read_error(code));
+                d.show_message(&read_error(t, code));
                 Self::idle(d);
                 return if code == "no_selection" { FixOutcome::NoSelection } else { FixOutcome::Skipped };
             }
         };
 
         if js_trim(text).split(is_js_space_char).filter(|w| !w.is_empty()).count() < 3 {
-            d.show_message("Quá ngắn để kiểm tra (dưới 3 từ).");
+            d.show_message(t.too_short);
             Self::idle(d);
             return FixOutcome::TooShort;
         }
@@ -109,16 +111,16 @@ impl FixFlow {
         let (corrected, notes) = match d.check(text, tone).await {
             Ok(r) => r,
             Err(e) => {
-                let msg = if e.is_empty() { "Engine error".to_string() } else { e };
+                let msg = if e.is_empty() { t.engine_error.to_string() } else { e };
                 d.hide_loading();
                 d.set_status(Status { kind: StatusKind::Error, message: Some(msg.clone()) });
-                d.notify(&format!("Check failed: {msg}. Your text was not changed."));
+                d.notify(&fill(t.check_failed, &[("msg", &msg)]));
                 return FixOutcome::Error;
             }
         };
 
         if corrected == text {
-            d.show_message("Không có lỗi nào ✓");
+            d.show_message(t.no_errors);
             Self::idle(d);
             return FixOutcome::Unchanged;
         }
@@ -128,11 +130,11 @@ impl FixFlow {
             let w = d.write_selection(&corrected, sel.pid, sel.method.as_deref()).await;
             if !w.ok {
                 d.hide_loading();
-                d.notify(&write_error(w.error.as_deref()));
+                d.notify(&write_error(t, w.error.as_deref()));
                 return FixOutcome::WriteFailed;
             }
             d.on_applied(text, &corrected, &notes);
-            d.show_message("Đã sửa, ⌘Z để hoàn tác ✓");
+            d.show_message(t.applied);
             return FixOutcome::Applied;
         }
         let choice = d.show_diff(PopoverPayload::diff(text, &corrected, sel.app_name.clone(), notes.clone())).await;
@@ -142,7 +144,7 @@ impl FixFlow {
 
         let w = d.write_selection(&corrected, sel.pid, sel.method.as_deref()).await;
         if !w.ok {
-            d.notify(&write_error(w.error.as_deref()));
+            d.notify(&write_error(t, w.error.as_deref()));
             return FixOutcome::WriteFailed;
         }
         d.on_applied(text, &corrected, &notes);
@@ -155,6 +157,7 @@ mod tests {
     use super::*;
     use std::cell::{Cell, RefCell};
     use tokio::sync::oneshot;
+    use ugrammar_core::i18n::Lang;
 
     enum Engine {
         Fix,
@@ -165,6 +168,7 @@ mod tests {
     struct Fake {
         paused: bool,
         quick_fix: bool,
+        language: Option<Lang>,
         sel: Selection,
         write_ok: Option<&'static str>,
         engine: Engine,
@@ -194,6 +198,7 @@ mod tests {
         Fake {
             paused: false,
             quick_fix: false,
+            language: None,
             sel: sel("I has a apple."),
             write_ok: None,
             engine: Engine::Fix,
@@ -214,7 +219,7 @@ mod tests {
 
     impl FlowDeps for Fake {
         fn settings(&self) -> Settings {
-            Settings { paused: self.paused, quick_fix: self.quick_fix, dictionary: vec!["Xpiki".into()], ..Settings::default() }
+            Settings { paused: self.paused, quick_fix: self.quick_fix, dictionary: vec!["Xpiki".into()], language: self.language, ..Settings::default() }
         }
         async fn read_selection(&self, excluded: &[String]) -> Selection {
             *self.excluded.borrow_mut() = excluded.to_vec();
@@ -336,7 +341,17 @@ mod tests {
         let f = Fake { sel: sel_err("secure_field"), ..fake() };
         assert_eq!(run(&f).await, FixOutcome::Skipped);
         assert_eq!(f.engine_calls.get(), 0);
-        assert!(f.msgs.borrow()[0].contains("bảo mật"));
+        assert_eq!(f.msgs.borrow()[0], "Skipped: password or secure field.");
+    }
+
+    #[tokio::test]
+    async fn messages_follow_the_picked_language() {
+        let f = Fake { sel: sel_err("secure_field"), language: Some(Lang::Vi), ..fake() };
+        run(&f).await;
+        let f2 = Fake { engine: Engine::Same, language: Some(Lang::Vi), ..fake() };
+        run(&f2).await;
+        assert_eq!(*f.msgs.borrow(), ["Bỏ qua: ô mật khẩu hoặc ô bảo mật."]);
+        assert_eq!(*f2.msgs.borrow(), ["Không có lỗi nào ✓"]);
     }
 
     #[tokio::test]

@@ -16,6 +16,7 @@ use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_updater::UpdaterExt;
 use tokio::sync::{mpsc, oneshot};
 use ugrammar_core::engine::{CheckRequest, Engine, Tone};
+use ugrammar_core::i18n::{fill, Lang, Strings};
 use ugrammar_core::insights::InsightStore;
 use ugrammar_core::settings::{Mod, Settings, SettingsStore};
 use ugrammar_core::text::{to_u16, utf16_len};
@@ -158,13 +159,15 @@ fn helper_path() -> PathBuf {
     }
 }
 
-const STATUS_LABEL: fn(StatusKind) -> &'static str = |k| match k {
-    StatusKind::Idle => "Ready",
-    StatusKind::Checking => "Checking…",
-    StatusKind::Paused => "Paused",
-    StatusKind::Error => "Error",
-    StatusKind::NeedsPermission => "Needs Accessibility permission",
-};
+fn status_label(t: &Strings, k: StatusKind) -> &'static str {
+    match k {
+        StatusKind::Idle => t.ready,
+        StatusKind::Checking => t.checking_status,
+        StatusKind::Paused => t.paused,
+        StatusKind::Error => t.error,
+        StatusKind::NeedsPermission => t.needs_permission,
+    }
+}
 
 const STATUS_TITLE: fn(StatusKind) -> &'static str = |k| match k {
     StatusKind::Idle => "ug",
@@ -329,13 +332,15 @@ impl Ctx {
     /// Right-click fallback: the plain native menu.
     fn tray_menu(&self) -> tauri::Result<Menu<Wry>> {
         let (st, cfg, a) = (self.status(), self.settings(), &self.app);
+        let t = cfg.strings();
         let message = st.message.map(|m| format!(" — {m}")).unwrap_or_default();
-        let status = MenuItem::with_id(a, "status", format!("Status: {}{message}", STATUS_LABEL(st.kind)), false, None::<&str>)?;
-        let hotkey = MenuItem::with_id(a, "hotkey", format!("Fix selection: {}", self.hotkey_label()), false, None::<&str>)?;
-        let pause = CheckMenuItem::with_id(a, "pause", "Pause", true, cfg.paused, None::<&str>)?;
-        let ax = MenuItem::with_id(a, "ax", "Open Accessibility Settings…", true, None::<&str>)?;
-        let settings = MenuItem::with_id(a, "settings", "Settings…", true, None::<&str>)?;
-        let quit = MenuItem::with_id(a, "quit", format!("Quit {APP_NAME}"), true, Some("Cmd+Q"))?;
+        let status_text = format!("{}{message}", status_label(t, st.kind));
+        let status = MenuItem::with_id(a, "status", fill(t.menu_status, &[("status", &status_text)]), false, None::<&str>)?;
+        let hotkey = MenuItem::with_id(a, "hotkey", fill(t.menu_fix, &[("hotkey", &self.hotkey_label())]), false, None::<&str>)?;
+        let pause = CheckMenuItem::with_id(a, "pause", t.menu_pause, true, cfg.paused, None::<&str>)?;
+        let ax = MenuItem::with_id(a, "ax", t.menu_ax, true, None::<&str>)?;
+        let settings = MenuItem::with_id(a, "settings", t.menu_settings, true, None::<&str>)?;
+        let quit = MenuItem::with_id(a, "quit", t.menu_quit, true, Some("Cmd+Q"))?;
         let (sep1, sep2) = (PredefinedMenuItem::separator(a)?, PredefinedMenuItem::separator(a)?);
         let mut items: Vec<&dyn IsMenuItem<Wry>> = vec![&status, &hotkey, &sep1, &pause];
         if st.kind == StatusKind::NeedsPermission {
@@ -349,7 +354,7 @@ impl Ctx {
         if let Some(t) = self.app.tray_by_id("main") {
             let kind = self.status().kind;
             let _ = t.set_title(Some(self.tray_title(kind)));
-            let _ = t.set_tooltip(Some(format!("{APP_NAME} — {}", STATUS_LABEL(kind))));
+            let _ = t.set_tooltip(Some(format!("{APP_NAME} — {}", status_label(self.settings().strings(), kind))));
             if let Ok(m) = self.tray_menu() {
                 let _ = t.set_menu(Some(m));
             }
@@ -494,6 +499,7 @@ impl Ctx {
     }
 
     fn show_popover(&self, payload: PopoverPayload, anchor: Option<Anchor>) {
+        let payload = PopoverPayload { lang: self.settings().lang(), ..payload };
         {
             let mut p = self.popover.lock().unwrap();
             p.anchor = Some(anchor.unwrap_or_else(|| self.cursor_anchor()));
@@ -550,7 +556,7 @@ impl Ctx {
 
     fn show_loading(&self, anchor: Option<Anchor>) {
         self.close_popover(Choice::Later);
-        self.show_popover(PopoverPayload::text(PopoverKind::Loading, "Đang kiểm tra…"), anchor);
+        self.show_popover(PopoverPayload::text(PopoverKind::Loading, self.settings().strings().checking), anchor);
     }
 
     // ---------- Flow ----------
@@ -599,7 +605,7 @@ impl Ctx {
         let h = self.settings().hotkey;
         let r: Reply = self.helper.request_as("set_hotkey", json!({ "key": h.key, "mods": h.mods }), 10 * SECOND).await;
         if !r.ok {
-            self.notify(&format!("Could not register hotkey ({}). It may be in use by another app.", r.error.unwrap_or_default()));
+            self.notify(&fill(self.settings().strings().hotkey_failed, &[("error", &r.error.unwrap_or_default())]));
         }
         // Tone menu: fixed ⌥⌘T. Failure (key in use) is not fatal.
         self.helper.request("set_hotkey", json!({ "key": "T", "mods": ["alt", "cmd"], "slot": 2 }), 10 * SECOND).await;
@@ -608,15 +614,15 @@ impl Ctx {
     /// Tone hotkey: pick Formal / Friendly / Short from a menu over the app being written in.
     pub fn on_hotkey2(&self) {
         self.close_popover(Choice::Later);
-        let a = &self.app;
+        let (a, t) = (&self.app, self.settings().strings());
         let menu = (|| {
             Menu::with_items(
                 a,
                 &[
-                    &MenuItem::with_id(a, "tone_title", "Rewrite selection as…", false, None::<&str>)?,
-                    &MenuItem::with_id(a, "tone_formal", "Formal", true, None::<&str>)?,
-                    &MenuItem::with_id(a, "tone_friendly", "Friendly", true, None::<&str>)?,
-                    &MenuItem::with_id(a, "tone_short", "Short", true, None::<&str>)?,
+                    &MenuItem::with_id(a, "tone_title", t.rewrite_as, false, None::<&str>)?,
+                    &MenuItem::with_id(a, "tone_formal", t.formal, true, None::<&str>)?,
+                    &MenuItem::with_id(a, "tone_friendly", t.friendly, true, None::<&str>)?,
+                    &MenuItem::with_id(a, "tone_short", t.short, true, None::<&str>)?,
                 ],
             )
         })();
@@ -788,7 +794,7 @@ impl Ctx {
         if r.ok {
             self.insights.lock().unwrap().record(&f.sentence, &f.corrected, &f.notes);
         } else {
-            self.show_message(&format!("Không sửa được, hãy chọn câu rồi bấm {}", self.hotkey_label()), None);
+            self.show_message(&fill(self.settings().strings().auto_write_failed, &[("hotkey", &self.hotkey_label())]), None);
         }
         r.ok
     }
@@ -875,7 +881,7 @@ impl Ctx {
 
     fn update_installed(&'static self, v: String) {
         debug(&format!("update installed {v}"));
-        self.notify(&format!("Version {v} is installed. Restart {APP_NAME} from the menu bar to use it."));
+        self.notify(&fill(self.settings().strings().update_installed, &[("version", &v)]));
         *self.update.lock().unwrap() = Some(v);
         self.refresh_tray();
     }
@@ -930,33 +936,54 @@ impl Ctx {
         self.set_status(Status::of(StatusKind::Idle));
         let trusted = self.ax_trusted().await;
         self.register_hotkey().await;
+        if self.settings().language.is_none() {
+            let lang = self.language_dialog().await;
+            // A fresh install also explains fixes in that language.
+            let explain = (!self.settings().first_run_acknowledged).then(|| lang.explain_lang());
+            let mut patch = json!({ "language": lang });
+            if let Some(e) = explain {
+                patch["explainLang"] = json!(e);
+            }
+            self.update_settings(patch);
+        }
         if !self.settings().first_run_acknowledged {
             self.first_run_dialog().await;
             self.update_settings(json!({ "firstRunAcknowledged": true }));
         }
         if !trusted {
-            self.set_status(Status { kind: StatusKind::NeedsPermission, message: Some("Grant Accessibility permission".into()) });
+            self.set_status(Status { kind: StatusKind::NeedsPermission, message: Some(self.settings().strings().grant_ax.into()) });
             self.prompt_ax().await;
         }
     }
 
+    /// Asked in both languages, before anything else is shown.
+    async fn language_dialog(&self) -> Lang {
+        use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+        let (tx, rx) = oneshot::channel();
+        self.app
+            .dialog()
+            .message("Choose the language for ugrammar. You can change it later in Settings.\n\nChọn ngôn ngữ cho ugrammar. Có thể đổi sau trong Cài đặt.")
+            .title("Language · Ngôn ngữ")
+            .kind(MessageDialogKind::Info)
+            .buttons(MessageDialogButtons::OkCancelCustom("English".into(), "Tiếng Việt".into()))
+            .show(move |english| {
+                let _ = tx.send(if english { Lang::En } else { Lang::Vi });
+            });
+        rx.await.unwrap_or(Lang::En)
+    }
+
     async fn first_run_dialog(&self) {
         use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
-        let detail = format!(
-            "1. Grant Accessibility permission when macOS asks (System Settings → Privacy & Security → Accessibility). Needed to read and replace text.\n\
-             2. Select text and press {} to proofread. ⌥⌘T rewrites in a tone.\n\
-             3. Click the ug icon in the menu bar for everything else: auto-check, tone, engine, dictionary.\n\n\
-             Privacy: checked text is sent to {} (change it from the ug menu-bar panel). Password fields and excluded apps are never read. Text is never logged or stored.",
-            self.hotkey_label(),
-            self.settings().endpoint
-        );
+        let cfg = self.settings();
+        let t = cfg.strings();
+        let detail = fill(t.welcome_body, &[("hotkey", &self.hotkey_label()), ("endpoint", &cfg.endpoint)]);
         let (tx, rx) = oneshot::channel();
         self.app
             .dialog()
             .message(detail)
-            .title(format!("Welcome to {APP_NAME}"))
+            .title(t.welcome_title)
             .kind(MessageDialogKind::Info)
-            .buttons(MessageDialogButtons::OkCustom("Get started".into()))
+            .buttons(MessageDialogButtons::OkCustom(t.get_started.into()))
             .show(move |_| {
                 let _ = tx.send(());
             });
