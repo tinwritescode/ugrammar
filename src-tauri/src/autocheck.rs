@@ -1,6 +1,6 @@
 use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
+pub use crate::helper_client::Snapshot;
 use ugrammar_core::sentence::{sentence_ending_at, SentenceRange, DEFAULT_MIN_WORDS};
 use ugrammar_core::text::{to_u16, utf16_len as len16};
 
@@ -20,35 +20,6 @@ const IDLE_MS: u64 = 1500;
 /// Fixes not acted on stay in the menu-bar list this long.
 const INBOX_TTL_MS: u64 = 10 * 60_000;
 const MAX_INBOX: usize = 10;
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct Rect {
-    pub x: f64,
-    pub y: f64,
-    pub w: f64,
-    pub h: f64,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Snapshot {
-    #[serde(default)]
-    pub ok: bool,
-    pub error: Option<String>,
-    pub reason: Option<serde_json::Value>,
-    pub visible: Option<bool>,
-    pub text: Option<String>,
-    pub caret: Option<usize>,
-    pub sel_len: Option<usize>,
-    pub pid: Option<i64>,
-    pub bundle_id: Option<String>,
-    pub app_name: Option<String>,
-    pub bounds: Option<Vec<Option<Rect>>>,
-    /// Frame of the focused field; sent with bounds requests only.
-    pub field: Option<Rect>,
-    /// Frame of the focused window; sent with bounds requests only.
-    pub window: Option<Rect>,
-}
 
 /// A checked sentence the engine corrected. `start` is UTF-16, into its field's text as last seen.
 #[derive(Debug, Clone, PartialEq)]

@@ -3,14 +3,16 @@ import Carbon.HIToolbox
 import ApplicationServices
 import Security
 
-// JSON-lines protocol over stdio.
+// JSON-lines protocol over stdio. The typed Rust side is src-tauri/src/helper_client.rs: keep the two in step.
 // In : {"id":1,"cmd":"read","excluded":["bundle.id"]}
 //      {"id":2,"cmd":"write","text":"...","pid":123,"method":"ax|clipboard"}
-//      {"id":3,"cmd":"status"} {"cmd":"prompt_ax"} {"cmd":"set_hotkey","key":"G","mods":["alt","cmd"]}
+//      {"cmd":"caret","excluded":[..],"deep":true} {"cmd":"snapshot","excluded":[..],"ranges":[{"loc":0,"len":1}]}
+//      {"cmd":"replace_range","loc":0,"len":3,"text":"..","expect":"..","pid":123}
+//      {"id":3,"cmd":"status"} {"cmd":"prompt_ax"} {"cmd":"set_hotkey","key":"G","mods":["alt","cmd"],"slot":1}
 //      {"cmd":"keychain_get|keychain_set|keychain_delete","service":"..","account":"..","value":".."}
 //      {"cmd":"app_info","ids":["bundle.id"]} -> {"apps":[{"id":"..","name":"..","icon":"<base64 png>"}]}
 //      {"cmd":"activate","pid":123}
-// Out: {"id":1,"ok":true,...} | {"id":1,"ok":false,"error":"..."} | {"event":"hotkey"}
+// Out: {"id":1,"ok":true,...} | {"id":1,"ok":false,"error":"..."} | {"event":"hotkey","slot":1}
 
 let out = FileHandle.standardOutput
 let outLock = NSLock()
@@ -145,13 +147,6 @@ func handleRead(_ id: Any?, _ msg: [String: Any]) {
     }
     if let el = el, let sel = axString(el, kAXSelectedTextAttribute as String), !sel.isEmpty {
         return reply(id, true, appInfo.merging(["text": sel, "method": "ax"]) { a, _ in a })
-    }
-    if (msg["selectAll"] as? Bool) == true, let role = el.flatMap({ axString($0, kAXRoleAttribute as String) }), ["AXTextField", "AXTextArea"].contains(role) {
-        postKey(0, flags: .maskCommand) // Cmd+A: no selection, so check the whole field
-        sleepMs(80)
-        if let el = el, let sel = axString(el, kAXSelectedTextAttribute as String), !sel.isEmpty {
-            return reply(id, true, appInfo.merging(["text": sel, "method": "ax"]) { a, _ in a })
-        }
     }
     // Fallback: simulate Cmd+C.
     if let text = clipboardCopySelection(), !text.isEmpty {
@@ -386,14 +381,13 @@ func handleWrite(_ id: Any?, _ msg: [String: Any]) {
 
 // MARK: - Keychain
 
-func keychainQuery(_ msg: [String: Any]) -> [String: Any] {
-    [kSecClass as String: kSecClassGenericPassword,
-     kSecAttrService as String: (msg["service"] as? String) ?? "Proofy",
-     kSecAttrAccount as String: (msg["account"] as? String) ?? "api-key"]
+func keychainQuery(_ msg: [String: Any]) -> [String: Any]? {
+    guard let service = msg["service"] as? String, let account = msg["account"] as? String else { return nil }
+    return [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
 }
 
 func handleKeychain(_ id: Any?, _ cmd: String, _ msg: [String: Any]) {
-    var q = keychainQuery(msg)
+    guard var q = keychainQuery(msg) else { return reply(id, false, ["error": "bad_args"]) }
     switch cmd {
     case "keychain_get":
         q[kSecReturnData as String] = true
@@ -448,7 +442,7 @@ func setHotkey(key: String, mods: [String], slot: UInt32 = 1) -> String? {
         InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
             var hk = EventHotKeyID()
             GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil, MemoryLayout<EventHotKeyID>.size, nil, &hk)
-            emit(["event": hk.id == 2 ? "hotkey2" : "hotkey"])
+            emit(["event": "hotkey", "slot": hk.id])
             return noErr
         }, 1, &spec, nil, nil)
         handlerInstalled = true
@@ -530,5 +524,4 @@ Thread.detachNewThread {
     exit(0) // stdin closed: parent gone
 }
 
-emit(["event": "ready"])
 app.run()

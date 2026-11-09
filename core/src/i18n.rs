@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 /// The UI language the user picked on first launch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum Lang {
     En,
     Vi,
@@ -68,6 +69,15 @@ pub struct Strings {
     /// {hotkey} {endpoint}
     pub welcome_body: &'static str,
     pub get_started: &'static str,
+    /// {error}
+    pub settings_save_failed: &'static str,
+    /// {error}
+    pub key_save_failed: &'static str,
+    pub connect_title: &'static str,
+    /// {endpoint}
+    pub connect_body: &'static str,
+    pub connect_ok: &'static str,
+    pub cancel: &'static str,
 }
 
 const EN: Strings = Strings {
@@ -109,6 +119,12 @@ const EN: Strings = Strings {
                    3. Click the ug icon in the menu bar for everything else: auto-check, tone, engine, dictionary.\n\n\
                    Privacy: checked text is sent to {endpoint} (change it from the ug menu-bar panel). Password fields and excluded apps are never read. Text is never logged or stored.",
     get_started: "Get started",
+    settings_save_failed: "Could not save settings ({error}).",
+    key_save_failed: "Could not save the API key ({error}). Nothing was changed.",
+    connect_title: "Connect ugrammar?",
+    connect_body: "A link asks ugrammar to send your checked text to {endpoint} with a new license key. This replaces your current engine and API key. Only connect if you just clicked Connect on your account page.",
+    connect_ok: "Connect",
+    cancel: "Cancel",
 };
 
 const VI: Strings = Strings {
@@ -150,6 +166,12 @@ const VI: Strings = Strings {
                    3. Bấm biểu tượng ug trên thanh menu cho mọi thứ khác: tự kiểm tra, giọng văn, engine, từ điển.\n\n\
                    Riêng tư: chữ cần kiểm tra được gửi tới {endpoint} (đổi trong bảng ug trên thanh menu). Ô mật khẩu và app bỏ qua không bao giờ bị đọc. Chữ không bao giờ được ghi log hay lưu lại.",
     get_started: "Bắt đầu",
+    settings_save_failed: "Không lưu được cài đặt ({error}).",
+    key_save_failed: "Không lưu được API key ({error}). Chưa có gì bị đổi.",
+    connect_title: "Kết nối ugrammar?",
+    connect_body: "Một liên kết muốn ugrammar gửi chữ cần kiểm tra tới {endpoint} bằng license key mới. Việc này thay engine và API key hiện tại. Chỉ kết nối nếu bạn vừa bấm Kết nối trên trang tài khoản.",
+    connect_ok: "Kết nối",
+    cancel: "Huỷ",
 };
 
 pub fn strings(lang: Lang) -> &'static Strings {

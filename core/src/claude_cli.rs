@@ -9,7 +9,7 @@ use std::time::Duration;
 use serde_json::Value;
 use tokio::io::AsyncWriteExt;
 
-use crate::engine::{build_messages, finish_check, CheckRequest, CheckResult, ConnectionStatus, EngineError, EngineErrorKind};
+use crate::engine::{build_prompt, finish_check, CheckRequest, CheckResult, ConnectionStatus, EngineError, EngineErrorKind};
 
 /// The CLI starts a Node-free binary but still logs in and warms up, so it never gets less than this.
 pub const MIN_TIMEOUT_MS: u64 = 30_000;
@@ -140,8 +140,7 @@ impl<R: Runner> ClaudeCliEngine<R> {
     }
 
     pub async fn check(&self, req: &CheckRequest) -> Result<CheckResult, EngineError> {
-        let mut prompt = build_messages(&req.text, &req.dictionary, req.explain, req.explain_lang.as_deref(), req.tone);
-        let raw = self.ask(prompt.remove(0).content).await?;
+        let raw = self.ask(build_prompt(req)).await?;
         finish_check(req, &raw)
     }
 
@@ -183,7 +182,7 @@ mod tests {
         assert_eq!((r.original.as_str(), r.corrected.as_str()), ("I has a apple.", "I have an apple."));
         let call = seen.lock().unwrap().clone().unwrap();
         assert_eq!(call.program, PathBuf::from("/bin/claude"));
-        assert_eq!(call.stdin, build_messages("I has a apple.", &["Xpiki".into()], false, None, None)[0].content);
+        assert_eq!(call.stdin, build_prompt(&CheckRequest { dictionary: vec!["Xpiki".into()], ..req("I has a apple.") }));
         assert_eq!(call.args[..5], ["-p", "--output-format", "json", "--model", "haiku"]);
         let tools = call.args.iter().position(|a| a == "--tools").unwrap();
         assert_eq!(call.args[tools + 1], "", "no tools: the text is never instructions to act on");

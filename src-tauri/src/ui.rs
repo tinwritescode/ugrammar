@@ -1,3 +1,4 @@
+use crate::placement::{Rect, Screen};
 use tauri::window::{Effect, EffectState, EffectsBuilder};
 use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_nspanel::{tauri_panel, CollectionBehavior, ManagerExt, PanelBuilder, PanelLevel, StyleMask};
@@ -11,48 +12,8 @@ tauri_panel! {
     })
 }
 
-/// Logical points, top-left origin: the space AX bounds and window positions share.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Area {
-    pub x: f64,
-    pub y: f64,
-    pub w: f64,
-    pub h: f64,
-}
-
-const INSET: f64 = 8.0;
-
-impl Area {
-    /// Left edge that keeps a `w`-wide window inset inside this area.
-    pub fn fit_x(&self, x: f64, w: f64) -> f64 {
-        x.max(self.x + INSET).min(self.x + self.w - w - INSET)
-    }
-
-    pub fn fit_y(&self, y: f64, h: f64) -> f64 {
-        y.max(self.y + INSET).min(self.y + self.h - h - INSET)
-    }
-
-    pub fn contains(&self, x: f64, y: f64) -> bool {
-        self.distance2(x, y) == 0.0
-    }
-
-    fn distance2(&self, x: f64, y: f64) -> f64 {
-        let dx = (self.x - x).max(x - (self.x + self.w)).max(0.0);
-        let dy = (self.y - y).max(y - (self.y + self.h)).max(0.0);
-        dx * dx + dy * dy
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Screen {
-    pub bounds: Area,
-    pub work: Area,
-}
-
-const FALLBACK: Area = Area { x: 0.0, y: 0.0, w: 1440.0, h: 900.0 };
-
 // tao reports each monitor's CG point rect multiplied by that monitor's own scale.
-fn screens(app: &AppHandle) -> Vec<Screen> {
+pub fn screens(app: &AppHandle) -> Vec<Screen> {
     let monitors = app.available_monitors().unwrap_or_default();
     monitors
         .iter()
@@ -60,8 +21,8 @@ fn screens(app: &AppHandle) -> Vec<Screen> {
             let s = m.scale_factor();
             let (p, z, wa) = (m.position(), m.size(), m.work_area());
             Screen {
-                bounds: Area { x: p.x as f64 / s, y: p.y as f64 / s, w: z.width as f64 / s, h: z.height as f64 / s },
-                work: Area {
+                bounds: Rect { x: p.x as f64 / s, y: p.y as f64 / s, w: z.width as f64 / s, h: z.height as f64 / s },
+                work: Rect {
                     x: wa.position.x as f64 / s,
                     y: wa.position.y as f64 / s,
                     w: wa.size.width as f64 / s,
@@ -70,14 +31,6 @@ fn screens(app: &AppHandle) -> Vec<Screen> {
             }
         })
         .collect()
-}
-
-/// The display containing the point, else the closest one.
-pub fn screen_near(app: &AppHandle, x: f64, y: f64) -> Screen {
-    screens(app)
-        .into_iter()
-        .min_by(|a, b| a.bounds.distance2(x, y).total_cmp(&b.bounds.distance2(x, y)))
-        .unwrap_or(Screen { bounds: FALLBACK, work: FALLBACK })
 }
 
 fn primary_scale(app: &AppHandle) -> f64 {
@@ -91,12 +44,12 @@ pub fn cursor(app: &AppHandle) -> (f64, f64) {
     (p.x / s, p.y / s)
 }
 
-pub fn tray_rect(app: &AppHandle) -> Option<Area> {
+pub fn tray_rect(app: &AppHandle) -> Option<Rect> {
     let r = app.tray_by_id("main")?.rect().ok()??;
     let s = primary_scale(app);
     let p = r.position.to_logical::<f64>(s);
     let z = r.size.to_logical::<f64>(s);
-    Some(Area { x: p.x, y: p.y, w: z.width, h: z.height })
+    Some(Rect { x: p.x, y: p.y, w: z.width, h: z.height })
 }
 
 /// Matches the 12px corners of the tray panel and popover card in the web UI.
@@ -172,18 +125,5 @@ pub fn place(app: &AppHandle, label: &str, x: f64, y: f64) {
 pub fn resize(app: &AppHandle, label: &str, w: f64, h: f64) {
     if let Some(win) = app.get_webview_window(label) {
         let _ = win.set_size(LogicalSize::new(w, h));
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn distance_is_zero_inside_and_grows_outside() {
-        let a = Area { x: 0.0, y: 0.0, w: 100.0, h: 50.0 };
-        assert_eq!(a.distance2(10.0, 10.0), 0.0);
-        assert_eq!(a.distance2(103.0, 54.0), 25.0);
-        assert_eq!(a.distance2(-2.0, 10.0), 4.0);
     }
 }

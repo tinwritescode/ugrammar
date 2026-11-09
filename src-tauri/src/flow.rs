@@ -1,4 +1,5 @@
-use crate::helper::{Reply, Selection};
+use crate::helper_client::{HelperError, Selection};
+use crate::reactions::resting;
 use crate::ipc::{Choice, PopoverPayload, Status, StatusKind};
 use std::sync::atomic::{AtomicBool, Ordering};
 use ugrammar_core::engine::Tone;
@@ -23,8 +24,8 @@ pub enum FixOutcome {
 
 pub trait FlowDeps {
     fn settings(&self) -> Settings;
-    async fn read_selection(&self, excluded: &[String]) -> Selection;
-    async fn write_selection(&self, text: &str, pid: Option<i64>, method: Option<&str>) -> Reply;
+    async fn read_selection(&self, excluded: &[String]) -> Result<Selection, HelperError>;
+    async fn write_selection(&self, text: &str, pid: Option<i64>, method: Option<&str>) -> Result<(), HelperError>;
     /// Engine call with the settings' dictionary and explain options; Err carries the message.
     async fn check(&self, text: &str, tone: Option<Tone>) -> Result<(String, Vec<String>), String>;
     fn set_status(&self, s: Status);
@@ -39,19 +40,19 @@ pub trait FlowDeps {
     fn on_applied(&self, original: &str, corrected: &str, notes: &[String]);
 }
 
-fn read_error(t: &Strings, code: &str) -> String {
-    match code {
-        "excluded_app" => t.skip_excluded.into(),
-        "secure_field" => t.skip_secure.into(),
-        "no_selection" => t.select_first.into(),
-        other => fill(t.read_failed, &[("code", other)]),
+fn read_error(t: &Strings, e: &HelperError) -> String {
+    match e {
+        HelperError::ExcludedApp => t.skip_excluded.into(),
+        HelperError::SecureField => t.skip_secure.into(),
+        HelperError::NoSelection => t.select_first.into(),
+        other => fill(t.read_failed, &[("code", &other.to_string())]),
     }
 }
 
-fn write_error(t: &Strings, code: Option<&str>) -> String {
-    match code {
-        Some("focus_changed") => t.focus_changed.into(),
-        other => fill(t.write_failed, &[("code", other.unwrap_or("undefined"))]),
+fn write_error(t: &Strings, e: &HelperError) -> String {
+    match e {
+        HelperError::FocusChanged => t.focus_changed.into(),
+        other => fill(t.write_failed, &[("code", &other.to_string())]),
     }
 }
 
@@ -70,7 +71,7 @@ pub struct FixFlow {
 
 impl FixFlow {
     fn idle<D: FlowDeps>(d: &D) {
-        d.set_status(Status::of(if d.settings().paused { StatusKind::Paused } else { StatusKind::Idle }));
+        d.set_status(resting(&d.settings()));
     }
 
     pub async fn run<D: FlowDeps>(&self, d: &D, tone: Option<Tone>) -> FixOutcome {
@@ -85,22 +86,21 @@ impl FixFlow {
         let _busy = Busy(&self.busy);
         d.set_status(Status::of(StatusKind::Checking));
         d.show_loading();
-        let sel = d.read_selection(&s.excluded_apps).await;
-        let text = match sel.text.as_deref() {
-            Some(t) if sel.ok && !t.is_empty() => t,
-            _ => {
-                let code = sel.error.as_deref().unwrap_or("unknown");
-                if code == "accessibility_not_trusted" {
-                    d.hide_loading();
-                    d.set_status(Status { kind: StatusKind::NeedsPermission, message: Some(t.grant_ax.into()) });
-                    d.notify(t.needs_ax);
-                    return FixOutcome::NeedsPermission;
-                }
-                d.show_message(&read_error(t, code));
+        let sel = match d.read_selection(&s.excluded_apps).await {
+            Ok(sel) => sel,
+            Err(HelperError::AccessibilityNotTrusted) => {
+                d.hide_loading();
+                d.set_status(Status { kind: StatusKind::NeedsPermission, message: Some(t.grant_ax.into()) });
+                d.notify(t.needs_ax);
+                return FixOutcome::NeedsPermission;
+            }
+            Err(e) => {
+                d.show_message(&read_error(t, &e));
                 Self::idle(d);
-                return if code == "no_selection" { FixOutcome::NoSelection } else { FixOutcome::Skipped };
+                return if e == HelperError::NoSelection { FixOutcome::NoSelection } else { FixOutcome::Skipped };
             }
         };
+        let text = sel.text.as_str();
 
         if js_trim(text).split(is_js_space_char).filter(|w| !w.is_empty()).count() < 3 {
             d.show_message(t.too_short);
@@ -127,10 +127,9 @@ impl FixFlow {
 
         Self::idle(d);
         if s.quick_fix && tone.is_none() {
-            let w = d.write_selection(&corrected, sel.pid, sel.method.as_deref()).await;
-            if !w.ok {
+            if let Err(e) = d.write_selection(&corrected, sel.pid, sel.method.as_deref()).await {
                 d.hide_loading();
-                d.notify(&write_error(t, w.error.as_deref()));
+                d.notify(&write_error(t, &e));
                 return FixOutcome::WriteFailed;
             }
             d.on_applied(text, &corrected, &notes);
@@ -142,9 +141,8 @@ impl FixFlow {
             return FixOutcome::Dismissed;
         }
 
-        let w = d.write_selection(&corrected, sel.pid, sel.method.as_deref()).await;
-        if !w.ok {
-            d.notify(&write_error(t, w.error.as_deref()));
+        if let Err(e) = d.write_selection(&corrected, sel.pid, sel.method.as_deref()).await {
+            d.notify(&write_error(t, &e));
             return FixOutcome::WriteFailed;
         }
         d.on_applied(text, &corrected, &notes);
@@ -169,7 +167,7 @@ mod tests {
         paused: bool,
         quick_fix: bool,
         language: Option<Lang>,
-        sel: Selection,
+        sel: Result<Selection, HelperError>,
         write_ok: Option<&'static str>,
         engine: Engine,
         diff: Choice,
@@ -186,12 +184,12 @@ mod tests {
         hidden: Cell<usize>,
     }
 
-    fn sel(text: &str) -> Selection {
-        Selection { ok: true, text: Some(text.into()), method: Some("ax".into()), pid: Some(7), app_name: Some("Notes".into()), ..Default::default() }
+    fn sel(text: &str) -> Result<Selection, HelperError> {
+        Ok(Selection { text: text.into(), method: Some("ax".into()), pid: Some(7), app_name: Some("Notes".into()), ..Default::default() })
     }
 
-    fn sel_err(e: &str) -> Selection {
-        Selection { ok: false, error: Some(e.into()), ..Default::default() }
+    fn sel_err(code: &str) -> Result<Selection, HelperError> {
+        Err(code.to_string().into())
     }
 
     fn fake() -> Fake {
@@ -221,7 +219,7 @@ mod tests {
         fn settings(&self) -> Settings {
             Settings { paused: self.paused, quick_fix: self.quick_fix, dictionary: vec!["Xpiki".into()], language: self.language, ..Settings::default() }
         }
-        async fn read_selection(&self, excluded: &[String]) -> Selection {
+        async fn read_selection(&self, excluded: &[String]) -> Result<Selection, HelperError> {
             *self.excluded.borrow_mut() = excluded.to_vec();
             let gate = self.gate.borrow_mut().take();
             if let Some(g) = gate {
@@ -229,12 +227,12 @@ mod tests {
             }
             self.sel.clone()
         }
-        async fn write_selection(&self, text: &str, _pid: Option<i64>, _method: Option<&str>) -> Reply {
+        async fn write_selection(&self, text: &str, _pid: Option<i64>, _method: Option<&str>) -> Result<(), HelperError> {
             if let Some(e) = self.write_ok {
-                return Reply { ok: false, error: Some(e.into()), method: None };
+                return Err(e.to_string().into());
             }
             self.writes.borrow_mut().push(text.into());
-            Reply { ok: true, ..Default::default() }
+            Ok(())
         }
         async fn check(&self, text: &str, _tone: Option<Tone>) -> Result<(String, Vec<String>), String> {
             match self.engine {

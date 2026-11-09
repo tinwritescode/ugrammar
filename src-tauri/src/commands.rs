@@ -1,12 +1,13 @@
 use crate::app::ctx;
-use crate::ipc::{AppInfo, Choice, PopoverPayload, Status, StatusKind, TrayState};
+use crate::ipc::{AppInfo, Choice, PopoverPayload, TrayState};
+use crate::reactions::resting;
 use serde::Deserialize;
-use serde_json::{json, Value};
-use std::time::Duration;
+use serde_json::Value;
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 use tokio::sync::oneshot;
-use ugrammar_core::engine::{ConnectionStatus, Engine};
+use ugrammar_core::engine::{ConnectionStatus, EngineSetup, Purpose};
+use ugrammar_core::i18n::fill;
 use ugrammar_core::settings::with_patch;
 
 // Commands that touch windows are async so they run off the main thread.
@@ -48,17 +49,16 @@ pub async fn clear_insights() {
 #[tauri::command]
 pub async fn save_settings(patch: Value) {
     let c = ctx();
-    let before = c.settings().hotkey;
-    if c.update_settings(patch).hotkey != before {
-        c.register_hotkey().await;
-    }
+    c.update_settings(patch);
     c.refresh_tray();
 }
 
 #[tauri::command]
 pub async fn set_api_key(key: String) {
     let c = ctx();
-    c.set_api_key(&key).await;
+    if let Err(e) = c.set_api_key(&key).await {
+        c.notify(&fill(c.settings().strings().key_save_failed, &[("error", &e)]));
+    }
     c.refresh_tray();
 }
 
@@ -81,9 +81,9 @@ pub async fn test_connection(draft: Draft) -> ConnectionStatus {
     };
     let typed = draft.settings.into_iter().filter(|(_, v)| v.as_str().is_none_or(|s| !s.trim().is_empty())).collect();
     let s = with_patch(&c.settings(), Value::Object(typed));
-    let r = Engine::from_settings(&s, key).test_connection().await;
+    let r = EngineSetup::from_settings(&s).engine(s.timeout_ms, Purpose::Hotkey, key).test_connection().await;
     if r.ok {
-        c.set_status(Status::of(StatusKind::Idle));
+        c.set_status(resting(&c.settings()));
     }
     r
 }
@@ -108,8 +108,7 @@ pub async fn pick_app() -> Option<String> {
 
 #[tauri::command]
 pub async fn app_info(ids: Vec<String>) -> Vec<AppInfo> {
-    let r = ctx().helper.request("app_info", json!({ "ids": ids }), Duration::from_secs(10)).await;
-    serde_json::from_value(r["apps"].clone()).unwrap_or_default()
+    ctx().helper.app_info(&ids).await
 }
 
 #[tauri::command]

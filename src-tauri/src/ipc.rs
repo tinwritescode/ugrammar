@@ -6,6 +6,7 @@ use ugrammar_core::settings::Settings;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum PopoverKind {
     Diff,
     Message,
@@ -14,6 +15,8 @@ pub enum PopoverKind {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct PopoverPayload {
     pub kind: PopoverKind,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -30,7 +33,7 @@ pub struct PopoverPayload {
     pub notes: Option<Vec<String>>,
     /// Esc dismisses it; auto-check popups leave Esc to the app being typed in.
     pub esc: bool,
-    /// UI language; `Ctx::show_popover` sets it from settings.
+    /// UI language; `Ctx::open_popover` sets it from settings.
     pub lang: Lang,
 }
 
@@ -56,6 +59,8 @@ impl PopoverPayload {
 
 /// An excluded app as the tray lists it; `name`/`icon` are absent when the app is not installed.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct AppInfo {
     pub id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -67,6 +72,7 @@ pub struct AppInfo {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum Choice {
     Accept,
     Dismiss,
@@ -76,6 +82,7 @@ pub enum Choice {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum StatusKind {
     Idle,
     Checking,
@@ -99,6 +106,7 @@ impl Status {
 /// Result of the last manual "check for updates", shown under its button until the tray closes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum UpdateNote {
     Checking,
     Downloading,
@@ -109,6 +117,8 @@ pub enum UpdateNote {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct TrayState {
     pub status: StatusKind,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -129,10 +139,57 @@ pub struct TrayState {
 /// An auto-check fix waiting in the menu-bar list.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct PendingFix {
     pub id: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub app_name: Option<String>,
     pub ops: Vec<DiffOp>,
     pub notes: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use ts_rs::{Config, TS};
+    use ugrammar_core::engine::{ConnectionStatus, Tone};
+
+    fn read_dir(dir: &Path) -> BTreeMap<String, String> {
+        let entries = fs::read_dir(dir).into_iter().flatten().flatten();
+        entries.filter_map(|e| Some((e.file_name().into_string().ok()?, fs::read_to_string(e.path()).ok()?))).collect()
+    }
+
+    /// The web UI's copies of these types are generated from them: src/shared/bindings. A stale copy is rewritten
+    /// and fails this test once, so the change shows up in the diff.
+    #[test]
+    fn typescript_bindings_are_current() {
+        let tmp = std::env::temp_dir().join(format!("ugrammar-ts-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let cfg = Config::new().with_out_dir(&tmp).with_large_int("number");
+        TrayState::export_all(&cfg).unwrap();
+        PopoverPayload::export_all(&cfg).unwrap();
+        AppInfo::export_all(&cfg).unwrap();
+        Choice::export_all(&cfg).unwrap();
+        Tone::export_all(&cfg).unwrap();
+        ConnectionStatus::export_all(&cfg).unwrap();
+        let fresh = read_dir(&tmp);
+        let _ = fs::remove_dir_all(&tmp);
+
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../src/shared/bindings");
+        let old = read_dir(&dir);
+        if old == fresh {
+            return;
+        }
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        for (name, body) in &fresh {
+            fs::write(dir.join(name), body).unwrap();
+        }
+        let changed: std::collections::BTreeSet<_> = fresh.keys().chain(old.keys()).filter(|n| old.get(*n) != fresh.get(*n)).collect();
+        panic!("src/shared/bindings was stale and is rewritten now: {changed:?}");
+    }
 }

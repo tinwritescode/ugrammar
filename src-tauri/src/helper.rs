@@ -1,3 +1,4 @@
+use crate::helper_client::HotkeySlot;
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -12,30 +13,8 @@ use tokio::time::{timeout_at, Instant};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HelperEvent {
-    Hotkey,
-    Hotkey2,
+    Hotkey(HotkeySlot),
     Restarted,
-}
-
-#[derive(Debug, Clone, Default, serde::Deserialize)]
-pub struct Reply {
-    #[serde(default)]
-    pub ok: bool,
-    pub error: Option<String>,
-    pub method: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Selection {
-    #[serde(default)]
-    pub ok: bool,
-    pub error: Option<String>,
-    pub text: Option<String>,
-    pub method: Option<String>,
-    pub bundle_id: Option<String>,
-    pub app_name: Option<String>,
-    pub pid: Option<i64>,
 }
 
 type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>>;
@@ -47,6 +26,12 @@ pub struct Helper {
     up: Arc<watch::Sender<bool>>,
     pending: Pending,
     next_id: Arc<AtomicU64>,
+}
+
+/// `{"event":"hotkey","slot":N}`; anything else is ignored.
+fn parse_event(msg: &Value) -> Option<HelperEvent> {
+    (msg["event"] == "hotkey").then_some(())?;
+    HotkeySlot::from_wire(msg["slot"].as_u64()?).map(HelperEvent::Hotkey)
 }
 
 fn fail(error: &str) -> Value {
@@ -103,13 +88,10 @@ impl Helper {
 
     fn on_line(&self, line: &str, events: &mpsc::UnboundedSender<HelperEvent>) {
         let Ok(msg) = serde_json::from_str::<Value>(line) else { return };
-        let event = match msg.get("event").and_then(Value::as_str) {
-            Some("hotkey") => Some(HelperEvent::Hotkey),
-            Some("hotkey2") => Some(HelperEvent::Hotkey2),
-            _ => None,
-        };
-        if let Some(e) = event {
-            let _ = events.send(e);
+        if msg.get("event").is_some() {
+            if let Some(e) = parse_event(&msg) {
+                let _ = events.send(e);
+            }
             return;
         }
         if let Some(id) = msg.get("id").and_then(Value::as_u64) {
@@ -158,10 +140,6 @@ impl Helper {
             }
         }
     }
-
-    pub async fn request_as<T: serde::de::DeserializeOwned + Default>(&self, cmd: &str, args: Value, timeout: Duration) -> T {
-        serde_json::from_value(self.request(cmd, args, timeout).await).unwrap_or_default()
-    }
 }
 
 #[cfg(test)]
@@ -178,6 +156,15 @@ mod tests {
         assert!(r.get("trusted").is_some());
         let bad = h.request("no_such_cmd", json!({}), Duration::from_secs(2)).await;
         assert_eq!(bad["ok"], false);
+    }
+
+    #[test]
+    fn hotkey_events_name_their_slot() {
+        assert_eq!(parse_event(&json!({ "event": "hotkey", "slot": 1 })), Some(HelperEvent::Hotkey(HotkeySlot::Fix)));
+        assert_eq!(parse_event(&json!({ "event": "hotkey", "slot": 2 })), Some(HelperEvent::Hotkey(HotkeySlot::Tone)));
+        assert_eq!(parse_event(&json!({ "event": "hotkey", "slot": 7 })), None);
+        assert_eq!(parse_event(&json!({ "event": "hotkey" })), None);
+        assert_eq!(parse_event(&json!({ "event": "ready" })), None);
     }
 
     #[tokio::test]

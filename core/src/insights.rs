@@ -9,6 +9,8 @@ use crate::spans::diff_spans;
 use crate::text::{js_trim, utf16_len};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(optional_fields))]
 pub struct Insight {
     pub from: String,
     pub to: String,

@@ -1,94 +1,27 @@
-export type DiffOp = { type: "equal" | "delete" | "insert"; text: string };
-export type Tone = "formal" | "friendly" | "short";
-export type Provider = "openai" | "claudeCli";
-/** UI language. */
-export type Lang = "en" | "vi";
-export type StatusKind = "idle" | "checking" | "paused" | "error" | "needs_permission";
+// Types the Rust side sends or reads are generated from it into ./bindings (src-tauri's
+// `typescript_bindings_are_current` test rewrites them); only UI-side types are written here.
+import type { ConnectionStatus } from "./bindings/ConnectionStatus";
+import type { PopoverPayload } from "./bindings/PopoverPayload";
+import type { Settings } from "./bindings/Settings";
+import type { AppInfo } from "./bindings/AppInfo";
+import type { TrayState } from "./bindings/TrayState";
+import type { Tone } from "./bindings/Tone";
 
-export interface Hotkey {
-  key: string;
-  mods: ("cmd" | "alt" | "ctrl" | "shift")[];
-}
-
-export interface Settings {
-  endpoint: string;
-  model: string;
-  timeoutMs: number;
-  dictionary: string[];
-  excludedApps: string[];
-  hotkey: Hotkey;
-  paused: boolean;
-  explain: boolean;
-  autoCheck: boolean;
-  quickFix: boolean;
-  explainLang: string;
-  firstRunAcknowledged: boolean;
-  provider: Provider;
-  claudeModel: string;
-  /** Empty: the app finds `claude` itself. */
-  claudePath: string;
-  /** Null until the user picks one on launch. */
-  language: Lang | null;
-}
+export type { DiffOp } from "./bindings/DiffOp";
+export type { Hotkey } from "./bindings/Hotkey";
+export type { Insight } from "./bindings/Insight";
+export type { Lang } from "./bindings/Lang";
+export type { PendingFix } from "./bindings/PendingFix";
+export type { Provider } from "./bindings/Provider";
+export type { StatusKind } from "./bindings/StatusKind";
+export type { UpdateNote } from "./bindings/UpdateNote";
+export type { AppInfo, PopoverPayload, Settings, Tone, TrayState };
+export type TestResult = ConnectionStatus;
 
 /** Engine settings typed in the setup view, tested before they are saved. */
 export type EngineDraft = Pick<Settings, "provider" | "endpoint" | "model" | "claudeModel" | "claudePath">;
 
-export interface PopoverPayload {
-  kind: "diff" | "message" | "loading";
-  original?: string;
-  corrected?: string;
-  ops?: DiffOp[];
-  message?: string;
-  appName?: string;
-  notes?: string[];
-  /** Esc dismisses it. */
-  esc: boolean;
-  lang: Lang;
-}
-
-export interface Insight {
-  from: string;
-  to: string;
-  count: number;
-  note?: string;
-}
-
-export interface TrayState {
-  status: StatusKind;
-  message?: string;
-  settings: Settings;
-  hotkey: string;
-  insights: Insight[];
-  hasApiKey: boolean;
-  update?: string;
-  updateNote?: UpdateNote;
-  /** Auto-check fixes not acted on yet, oldest first. */
-  pending: PendingFix[];
-}
-
-export interface PendingFix {
-  id: number;
-  appName?: string;
-  ops: DiffOp[];
-  notes: string[];
-}
-
-export type UpdateNote = "checking" | "downloading" | "up_to_date" | "failed" | "unsupported";
-
 export type TrayAction = "quit" | "ax" | "github" | "license" | "restart" | Tone;
-
-/** An excluded app; `name`/`icon` are absent when it is not installed. `icon` is a base64 PNG. */
-export interface AppInfo {
-  id: string;
-  name?: string;
-  icon?: string;
-}
-
-export interface TestResult {
-  ok: boolean;
-  message: string;
-}
 
 export interface ProofyApi {
   onPopover(cb: (p: PopoverPayload) => void): void;

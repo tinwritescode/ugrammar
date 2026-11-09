@@ -11,6 +11,7 @@ use crate::text::js_trim;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum Mod {
     Cmd,
     Alt,
@@ -21,6 +22,7 @@ pub enum Mod {
 /// Which engine fixes the text.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum Provider {
     /// Any OpenAI-compatible endpoint (`endpoint`, `model`, Keychain API key).
     #[default]
@@ -30,31 +32,42 @@ pub enum Provider {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Hotkey {
-    pub key: String, // A-Z
+    /// A-Z.
+    pub key: String,
     pub mods: Vec<Mod>,
 }
 
 /// Field order is the order `settings.json` is written in.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Settings {
     pub endpoint: String,
     pub model: String,
     pub timeout_ms: u64,
     pub dictionary: Vec<String>,
-    pub excluded_apps: Vec<String>, // bundle ids
+    /// Bundle ids.
+    pub excluded_apps: Vec<String>,
     pub hotkey: Hotkey,
     pub paused: bool,
-    pub explain: bool, // short Vietnamese reason per fix (slower)
-    pub auto_check: bool, // check each sentence when its end is typed (. ? ! Enter)
-    pub quick_fix: bool, // hotkey replaces at once, no popover (⌘Z undoes)
-    pub explain_lang: String, // language of the per-fix reasons
+    /// Short Vietnamese reason per fix (slower).
+    pub explain: bool,
+    /// Check each sentence when its end is typed (. ? ! Enter).
+    pub auto_check: bool,
+    /// Hotkey replaces at once, no popover (⌘Z undoes).
+    pub quick_fix: bool,
+    /// Language of the per-fix reasons.
+    pub explain_lang: String,
     pub first_run_acknowledged: bool,
     pub provider: Provider,
-    pub claude_model: String, // --model for the claude CLI
-    pub claude_path: String,  // claude CLI binary; empty finds it in the usual install places
-    pub language: Option<Lang>, // UI language; None until the user picks one on launch
+    /// --model for the claude CLI.
+    pub claude_model: String,
+    /// Claude CLI binary; empty finds it in the usual install places.
+    pub claude_path: String,
+    /// UI language; None until the user picks one on launch.
+    pub language: Option<Lang>,
 }
 
 impl Default for Settings {
@@ -194,11 +207,13 @@ impl SettingsStore {
 
     /// `patch` is merged over the current settings JSON (camelCase keys) and normalized; unknown keys are dropped.
     pub fn update(&mut self, patch: Value) -> io::Result<Settings> {
-        self.data = with_patch(&self.data, patch);
+        // Saved first: memory never holds settings a restart would lose.
+        let next = with_patch(&self.data, patch);
         fs::create_dir_all(&self.dir)?;
         let tmp = self.dir.join("settings.json.tmp");
-        fs::write(&tmp, serde_json::to_string_pretty(&self.data)? + "\n")?;
+        fs::write(&tmp, serde_json::to_string_pretty(&next)? + "\n")?;
         fs::rename(tmp, self.dir.join("settings.json"))?;
+        self.data = next;
         for l in &self.listeners {
             l(&self.data);
         }
@@ -260,6 +275,16 @@ mod tests {
         let s2 = SettingsStore::new(dir.path());
         assert_eq!(s2.get().endpoint, "http://x/v1");
         assert_eq!(s2.get().model, "m2");
+    }
+
+    #[test]
+    fn failed_write_keeps_the_saved_settings() {
+        let dir = TempDir::new();
+        let blocker = dir.path().join("not-a-dir");
+        fs::write(&blocker, "").unwrap();
+        let mut s = SettingsStore::new(&blocker);
+        assert!(s.update(json!({ "model": "lost" })).is_err());
+        assert_eq!(s.get().model, Settings::default().model);
     }
 
     #[test]

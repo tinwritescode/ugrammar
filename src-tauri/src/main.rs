@@ -4,7 +4,11 @@ mod commands;
 mod deeplink;
 mod flow;
 mod helper;
+mod helper_client;
 mod ipc;
+mod placement;
+mod popover;
+mod reactions;
 mod ui;
 
 use app::{accept_shortcut, ctx, dismiss_shortcut, CTX, POPOVER_W, TRAY_W};

@@ -4,6 +4,7 @@ use crate::text::is_js_space_char;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum DiffKind {
     Equal,
     Delete,
@@ -11,6 +12,7 @@ pub enum DiffKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct DiffOp {
     #[serde(rename = "type")]
     pub kind: DiffKind,
