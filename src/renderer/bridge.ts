@@ -24,4 +24,5 @@ export const proofy: ProofyApi = {
   trayAction: (action) => void invoke("tray_action", { action }),
   trayResize: (height) => void invoke("tray_resize", { height }),
   appVersion: getVersion,
+  checkPermissions: () => invoke("check_permissions"),
 };

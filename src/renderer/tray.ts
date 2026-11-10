@@ -3,7 +3,7 @@ import { el } from "./dom";
 import { diffNodes, fixCount, note } from "./fix";
 import { dict, translatePage, type Dict } from "./i18n";
 import { mascot, type Mood } from "./mascot";
-import type { AppInfo, Hotkey, Lang, PendingFix, Provider, Settings, Tone, TrayState, UpdateNote } from "../shared/ipc";
+import type { AppInfo, Hotkey, Lang, PendingFix, PermissionId, PermissionStatus, Provider, Settings, Tone, TrayState, UpdateNote } from "../shared/ipc";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const panel = $("panel");
@@ -49,7 +49,7 @@ function setLanguage(lang: Lang | null) {
   const h = t.html;
   styleSel.replaceChildren(...[["off", h.styleOff], ["natural", h.natural], ["formal", h.formal], ["friendly", h.friendly], ["short", h.short]].map(([v, label]) => new Option(label, v)));
   if (state) styleSel.value = state.settings.style ?? "off";
-  $("title").textContent = panel.dataset.view === "setup" ? t.html.settings : "ugrammar";
+  $("title").textContent = panel.dataset.view === "setup" ? t.html.settings : panel.dataset.view === "permissions" ? t.html.permissions : "ugrammar";
 }
 setLanguage(null);
 
@@ -213,6 +213,39 @@ window.addEventListener("keydown", (e) => {
 });
 window.addEventListener("blur", () => setRecording(false));
 
+// ---------- Permissions ----------
+
+const PERMISSION_ICON: Record<PermissionId, string> = {
+  accessibility: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/>',
+};
+
+function permissionCard(p: PermissionStatus) {
+  const head = el("div", { className: "cardHead" },
+    el("span", { className: "grow" }, el("span", { className: "tile" }, svg(PERMISSION_ICON[p.id])), el("strong", {}, t.permissionNames[p.id])),
+    el("span", { className: p.granted ? "ok" : "bad" }, p.granted ? t.granted : t.notGranted));
+  const children: HTMLElement[] = [head, el("p", { className: "foot" }, t.permissionReasons[p.id])];
+  if (p.stale) children.push(el("p", { className: "note" }, t.staleHint));
+  children.push(el("button", { className: "primary", onclick: () => proofy.trayAction(p.stale ? "reset_ax" : "ax") }, p.stale ? t.resetAccess : t.openSettings));
+  return el("div", { className: "permCard" }, ...children);
+}
+
+function renderPermissions(items: PermissionStatus[]) {
+  $("permList").replaceChildren(...items.map(permissionCard));
+  const allGranted = items.length > 0 && items.every((p) => p.granted);
+  $("permAllSet").hidden = !allGranted;
+  $("permSummary").textContent = allGranted ? t.granted : t.notGranted;
+  $("permSummary").className = `aside ${allGranted ? "ok" : "bad"}`;
+}
+
+/** Re-probes while the permissions screen is open, so a grant made in System Settings shows up live. */
+function pollPermissions() {
+  if (panel.dataset.view !== "permissions" || document.hidden) return;
+  void proofy.checkPermissions().then((items) => {
+    if (state) state.permissions = items;
+    renderPermissions(items);
+  });
+}
+
 // ---------- Render ----------
 
 function render(s: TrayState) {
@@ -255,6 +288,7 @@ function render(s: TrayState) {
   renderRecorder();
   renderTags("words", cfg.dictionary, (w) => save({ dictionary: cfg.dictionary.filter((x) => x !== w) }));
   renderApps(cfg.excludedApps);
+  renderPermissions(s.permissions);
   resize();
 }
 
@@ -263,15 +297,17 @@ function resize() {
   requestAnimationFrame(() => proofy.trayResize(panel.scrollHeight));
 }
 
-function showView(v: "main" | "setup") {
+function showView(v: "main" | "setup" | "permissions") {
   if (panel.dataset.view === v) return;
   panel.dataset.view = v;
-  $("title").textContent = v === "setup" ? t.html.settings : "ugrammar";
+  $("title").textContent = v === "setup" ? t.html.settings : v === "permissions" ? t.html.permissions : "ugrammar";
   setRecording(false);
   panel.scrollTop = 0;
   resize();
+  if (v === "permissions") pollPermissions();
 }
 $("toSetup").onclick = () => showView("setup");
+$("toPermissions").onclick = () => showView("permissions");
 $("back").onclick = () => showView("main");
 $<HTMLInputElement>("power").onchange = (e) => save({ paused: !(e.target as HTMLInputElement).checked });
 
@@ -281,7 +317,7 @@ panel.addEventListener("scroll", () => {
   clearTimeout(scrollIdle);
   scrollIdle = window.setTimeout(() => panel.classList.remove("scrolling"), 800);
 });
-$("openAX").onclick = () => proofy.trayAction("ax");
+$("openAX").onclick = () => showView("permissions");
 $("quit").onclick = () => proofy.trayAction("quit");
 $("restart").onclick = () => proofy.trayAction("restart");
 $("github").onclick = (e) => {
@@ -361,7 +397,9 @@ $("clearInsights").onclick = () => void proofy.clearInsights();
 
 proofy.onTray(render);
 // Replay the drop-in each time the panel opens, not on live updates.
-window.addEventListener("focus", () => { panel.style.animation = "none"; void panel.offsetWidth; panel.style.animation = ""; });
+window.addEventListener("focus", () => { panel.style.animation = "none"; void panel.offsetWidth; panel.style.animation = ""; pollPermissions(); });
 // Each open starts on the main view; not on blur, which a native dialog over the panel also fires.
 document.addEventListener("visibilitychange", () => document.hidden && showView("main"));
+// Catches a grant made in System Settings while the permissions screen is open.
+setInterval(pollPermissions, 1500);
 proofy.getTray().then(render);

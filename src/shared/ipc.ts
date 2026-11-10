@@ -6,22 +6,24 @@ import type { Settings } from "./bindings/Settings";
 import type { AppInfo } from "./bindings/AppInfo";
 import type { TrayState } from "./bindings/TrayState";
 import type { Tone } from "./bindings/Tone";
+import type { PermissionStatus } from "./bindings/PermissionStatus";
 
 export type { DiffOp } from "./bindings/DiffOp";
 export type { Hotkey } from "./bindings/Hotkey";
 export type { Insight } from "./bindings/Insight";
 export type { Lang } from "./bindings/Lang";
 export type { PendingFix } from "./bindings/PendingFix";
+export type { PermissionId } from "./bindings/PermissionId";
 export type { Provider } from "./bindings/Provider";
 export type { StatusKind } from "./bindings/StatusKind";
 export type { UpdateNote } from "./bindings/UpdateNote";
-export type { AppInfo, PopoverPayload, Settings, Tone, TrayState };
+export type { AppInfo, PermissionStatus, PopoverPayload, Settings, Tone, TrayState };
 export type TestResult = ConnectionStatus;
 
 /** Engine settings typed in the setup view, tested before they are saved. */
 export type EngineDraft = Pick<Settings, "provider" | "endpoint" | "model" | "claudeModel" | "claudePath">;
 
-export type TrayAction = "quit" | "ax" | "github" | "license" | "restart" | Tone;
+export type TrayAction = "quit" | "ax" | "reset_ax" | "github" | "license" | "restart" | Tone;
 
 export interface ProofyApi {
   onPopover(cb: (p: PopoverPayload) => void): void;
@@ -40,4 +42,6 @@ export interface ProofyApi {
   trayAction(a: TrayAction): void;
   trayResize(height: number): void;
   appVersion(): Promise<string>;
+  /** Re-probes every permission; the permissions screen polls this while it's open. */
+  checkPermissions(): Promise<PermissionStatus[]>;
 }

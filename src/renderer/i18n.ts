@@ -1,4 +1,4 @@
-import type { Lang, StatusKind, UpdateNote } from "../shared/ipc";
+import type { Lang, PermissionId, StatusKind, UpdateNote } from "../shared/ipc";
 
 /** Words in the HTML: `data-i18n` sets text, `data-i18n-label` sets title and aria-label, `data-i18n-ph` sets placeholder. */
 const enHtml = {
@@ -51,6 +51,8 @@ const enHtml = {
   excludedAside: "Text is never read",
   pickApp: "Choose app…",
   quit: "Quit",
+  permissions: "Permissions",
+  permissionsAllSet: "All set — ugrammar has what it needs.",
 };
 type HtmlKey = keyof typeof enHtml;
 
@@ -97,6 +99,15 @@ const en = {
   hintApply: "apply",
   hintDismiss: "dismiss",
   checking: "Checking…",
+  granted: "Granted",
+  notGranted: "Not granted",
+  openSettings: "Open System Settings",
+  resetAccess: "Reset and ask again",
+  staleHint: "This was granted before, probably before the last update. Remove ugrammar from the list in System Settings, then add it again — or just press the button above.",
+  permissionNames: { accessibility: "Accessibility" } satisfies Record<PermissionId, string>,
+  permissionReasons: {
+    accessibility: "Lets ugrammar read the text you select and type the fix back in.",
+  } satisfies Record<PermissionId, string>,
 };
 export type Dict = typeof en;
 
@@ -151,6 +162,8 @@ const vi: Dict = {
     excludedAside: "Không bao giờ đọc chữ",
     pickApp: "Chọn app…",
     quit: "Thoát",
+    permissions: "Quyền truy cập",
+    permissionsAllSet: "Đã đủ quyền — ugrammar có mọi thứ cần thiết.",
   },
   status: { idle: "Sẵn sàng", checking: "Đang kiểm tra…", paused: "Đã tạm dừng", error: "Có lỗi", needs_permission: "Cần cấp quyền" },
   asleepNote: "Cú đang ngủ. Bật lại khi cần.",
@@ -190,6 +203,15 @@ const vi: Dict = {
   hintApply: "áp dụng",
   hintDismiss: "bỏ qua",
   checking: "Đang kiểm tra…",
+  granted: "Đã cấp",
+  notGranted: "Chưa cấp",
+  openSettings: "Mở Cài đặt hệ thống",
+  resetAccess: "Đặt lại và hỏi lại",
+  staleHint: "Quyền này đã được cấp trước đây, có thể là trước lần cập nhật gần nhất. Hãy xoá ugrammar khỏi danh sách trong Cài đặt hệ thống rồi thêm lại — hoặc bấm nút ở trên.",
+  permissionNames: { accessibility: "Accessibility" },
+  permissionReasons: {
+    accessibility: "Giúp ugrammar đọc đoạn chữ bạn chọn và viết lại chữ đã sửa.",
+  },
 };
 
 const DICTS: Record<Lang, Dict> = { en, vi };

@@ -85,6 +85,15 @@
         <span class="popup"><select id="language"><option value="en">English</option><option value="vi">Tiếng Việt</option></select><svg viewBox="0 0 24 24"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></label>
     </section>
 
+    <section class="group">
+      <button class="row ghost" id="toPermissions" type="button">
+        <span class="tile"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg></span>
+        <span class="grow" data-i18n="permissions"></span>
+        <span class="aside" id="permSummary"></span>
+        <svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+      </button>
+    </section>
+
     <div class="section">
       <div class="label"><span>Engine</span>
         <span class="popup"><select id="provider" aria-label="Engine"><option value="openai">OpenAI-compatible</option><option value="claudeCli">Claude CLI</option></select><svg viewBox="0 0 24 24"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div>
@@ -135,6 +144,14 @@
       <button id="checkUpdate"></button>
     </section>
     <p class="credit">Tín Nguyễn · <a id="github" href="#">@tinwritescode</a></p>
+  </div>
+
+  <div class="view" id="permissionsView">
+    <div class="section">
+      <div class="label" data-i18n="permissions"></div>
+      <section class="group pad stack" id="permList"></section>
+      <p class="foot ok" id="permAllSet" hidden data-i18n="permissionsAllSet"></p>
+    </div>
   </div>
 
   <footer>
