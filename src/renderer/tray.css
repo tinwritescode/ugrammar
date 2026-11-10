@@ -64,10 +64,11 @@ button.icon { display: grid; place-items: center; width: 28px; height: 28px; pad
 .seg button:hover { color: var(--fg); }
 .seg button.on { background: var(--seg-on); box-shadow: var(--seg-shadow); color: var(--fg); }
 
-.tones { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.tones { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .tones button { display: flex; align-items: center; justify-content: center; gap: 5px; height: 40px; padding: 0 4px; border: 0; border-radius: 12px; background: var(--tint-1); font-size: 13px; white-space: nowrap; }
 .tones button:nth-child(2) { background: var(--tint-2); }
 .tones button:nth-child(3) { background: var(--tint-3); }
+.tones button:nth-child(4) { background: var(--tint-4); }
 .tones svg { width: 14px; height: 14px; stroke-width: 2; color: var(--fg); }
 
 .group { border-radius: 16px; background: var(--group); border: 1.5px solid var(--group-border); }

@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use crate::engine::Tone;
 use crate::i18n::{self, Lang, Strings};
 use crate::text::js_trim;
 
@@ -58,6 +59,8 @@ pub struct Settings {
     pub auto_check: bool,
     /// Hotkey replaces at once, no popover (⌘Z undoes).
     pub quick_fix: bool,
+    /// Writing style every fix uses (hotkey and check-as-you-type); None only fixes errors.
+    pub style: Option<Tone>,
     /// Language of the per-fix reasons.
     pub explain_lang: String,
     pub first_run_acknowledged: bool,
@@ -95,6 +98,7 @@ impl Default for Settings {
             explain: true,
             auto_check: false,
             quick_fix: false,
+            style: None,
             explain_lang: "Vietnamese".into(),
             first_run_acknowledged: false,
             provider: Provider::Openai,
@@ -164,6 +168,7 @@ pub fn normalize_settings(raw: &Value) -> Settings {
         explain: !is("explain", false),
         auto_check: is("autoCheck", true),
         quick_fix: is("quickFix", true),
+        style: r.get("style").and_then(|v| Tone::deserialize(v).ok()),
         explain_lang: str_or("explainLang", d.explain_lang),
         first_run_acknowledged: is("firstRunAcknowledged", true),
         provider: r.get("provider").and_then(|p| Provider::deserialize(p).ok()).unwrap_or(d.provider),
@@ -351,7 +356,7 @@ mod tests {
         let dir = TempDir::new();
         let mut s = SettingsStore::new(dir.path());
         s.update(json!({ "excludedApps": [], "hotkey": { "key": "k", "mods": ["cmd"] } })).unwrap();
-        let expected = "{\n  \"endpoint\": \"http://localhost:20128/v1\",\n  \"model\": \"xpiki/gpt-6.1-sol\",\n  \"timeoutMs\": 10000,\n  \"dictionary\": [],\n  \"excludedApps\": [],\n  \"hotkey\": {\n    \"key\": \"K\",\n    \"mods\": [\n      \"cmd\"\n    ]\n  },\n  \"paused\": false,\n  \"explain\": true,\n  \"autoCheck\": false,\n  \"quickFix\": false,\n  \"explainLang\": \"Vietnamese\",\n  \"firstRunAcknowledged\": false,\n  \"provider\": \"openai\",\n  \"claudeModel\": \"haiku\",\n  \"claudePath\": \"\",\n  \"language\": null\n}\n";
+        let expected = "{\n  \"endpoint\": \"http://localhost:20128/v1\",\n  \"model\": \"xpiki/gpt-6.1-sol\",\n  \"timeoutMs\": 10000,\n  \"dictionary\": [],\n  \"excludedApps\": [],\n  \"hotkey\": {\n    \"key\": \"K\",\n    \"mods\": [\n      \"cmd\"\n    ]\n  },\n  \"paused\": false,\n  \"explain\": true,\n  \"autoCheck\": false,\n  \"quickFix\": false,\n  \"style\": null,\n  \"explainLang\": \"Vietnamese\",\n  \"firstRunAcknowledged\": false,\n  \"provider\": \"openai\",\n  \"claudeModel\": \"haiku\",\n  \"claudePath\": \"\",\n  \"language\": null\n}\n";
         assert_eq!(fs::read_to_string(dir.path().join("settings.json")).unwrap(), expected);
         assert!(!dir.path().join("settings.json.tmp").exists());
     }
@@ -373,6 +378,15 @@ mod tests {
         assert_eq!(normalize_settings(&json!({ "language": "en" })).language, Some(Lang::En));
         assert_eq!(normalize_settings(&json!({ "language": "fr" })).language, None);
         assert_eq!(with_patch(&normalize_settings(&json!({ "language": "vi" })), json!({ "model": "m" })).language, Some(Lang::Vi));
+    }
+
+    #[test]
+    fn style_is_off_by_default_and_rejects_unknown_values() {
+        assert_eq!(Settings::default().style, None);
+        assert_eq!(normalize_settings(&json!({ "style": "formal" })).style, Some(Tone::Formal));
+        assert_eq!(normalize_settings(&json!({ "style": "natural" })).style, Some(Tone::Natural));
+        assert_eq!(normalize_settings(&json!({ "style": "pirate" })).style, None);
+        assert_eq!(with_patch(&normalize_settings(&json!({ "style": "friendly" })), json!({ "style": null })).style, None);
     }
 
     #[test]

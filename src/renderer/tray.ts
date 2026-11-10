@@ -3,7 +3,7 @@ import { el } from "./dom";
 import { diffNodes, fixCount, note } from "./fix";
 import { dict, translatePage, type Dict } from "./i18n";
 import { mascot, type Mood } from "./mascot";
-import type { AppInfo, Hotkey, Lang, PendingFix, Provider, Settings, TrayState, UpdateNote } from "../shared/ipc";
+import type { AppInfo, Hotkey, Lang, PendingFix, Provider, Settings, Tone, TrayState, UpdateNote } from "../shared/ipc";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const panel = $("panel");
@@ -35,6 +35,9 @@ const langSel = $<HTMLSelectElement>("explainLang");
 const uiLangSel = $<HTMLSelectElement>("language");
 const LANGS: Record<Lang, true> = { en: true, vi: true };
 const isLang = (v: string): v is Lang => Object.hasOwn(LANGS, v);
+const styleSel = $<HTMLSelectElement>("style");
+const TONES: Record<Tone, true> = { natural: true, formal: true, friendly: true, short: true };
+const isTone = (v: string | undefined): v is Tone => v !== undefined && Object.hasOwn(TONES, v);
 
 /** Re-labels the page when the picked language changes; the explain-language options are rebuilt in it. */
 function setLanguage(lang: Lang | null) {
@@ -43,6 +46,9 @@ function setLanguage(lang: Lang | null) {
   t = dict(lang);
   translatePage(lang ?? "en", t);
   langSel.replaceChildren(...Object.entries(t.explainLangs).map(([v, label]) => new Option(label, v)));
+  const h = t.html;
+  styleSel.replaceChildren(...[["off", h.styleOff], ["natural", h.natural], ["formal", h.formal], ["friendly", h.friendly], ["short", h.short]].map(([v, label]) => new Option(label, v)));
+  if (state) styleSel.value = state.settings.style ?? "off";
   $("title").textContent = panel.dataset.view === "setup" ? t.html.settings : "ugrammar";
 }
 setLanguage(null);
@@ -237,6 +243,7 @@ function render(s: TrayState) {
   $("engine").title = engine.title;
   if (![...langSel.options].some((o) => o.value === cfg.explainLang)) langSel.add(new Option(cfg.explainLang, cfg.explainLang));
   setValue("explainLang", cfg.explainLang);
+  setValue("style", cfg.style ?? "off");
   setValue("language", cfg.language ?? "en");
   setValue("endpoint", cfg.endpoint);
   setValue("model", cfg.model);
@@ -291,13 +298,14 @@ for (const b of $("mode").querySelectorAll<HTMLButtonElement>("button")) {
   b.onclick = () => save(b.dataset.mode === "off" ? { autoCheck: false } : { autoCheck: true });
 }
 for (const b of document.querySelectorAll<HTMLButtonElement>("[data-tone]")) {
-  b.onclick = () => proofy.trayAction(b.dataset.tone === "friendly" ? "friendly" : b.dataset.tone === "short" ? "short" : "formal");
+  b.onclick = () => isTone(b.dataset.tone) && proofy.trayAction(b.dataset.tone);
 }
 for (const c of document.querySelectorAll<HTMLInputElement>(".switch[data-key]")) {
   c.onchange = () => save({ [c.dataset.key as SwitchKey]: c.checked });
 }
 
 langSel.onchange = () => save({ explainLang: langSel.value });
+styleSel.onchange = () => save({ style: isTone(styleSel.value) ? styleSel.value : null });
 uiLangSel.onchange = () => isLang(uiLangSel.value) && save({ language: uiLangSel.value });
 providerSel.onchange = () => {
   showProviderFields();

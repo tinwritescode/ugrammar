@@ -2,6 +2,7 @@
 import type { Hotkey } from "./Hotkey";
 import type { Lang } from "./Lang";
 import type { Provider } from "./Provider";
+import type { Tone } from "./Tone";
 
 /**
  * Field order is the order `settings.json` is written in.
@@ -23,6 +24,10 @@ autoCheck: boolean,
  * Hotkey replaces at once, no popover (⌘Z undoes).
  */
 quickFix: boolean, 
+/**
+ * Writing style every fix uses (hotkey and check-as-you-type); None only fixes errors.
+ */
+style: Tone | null, 
 /**
  * Language of the per-fix reasons.
  */
