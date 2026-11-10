@@ -1,5 +1,5 @@
 use crate::app::ctx;
-use crate::ipc::{AppInfo, Choice, PopoverPayload, TrayState};
+use crate::ipc::{AppInfo, Choice, PermissionStatus, PopoverPayload, TrayState};
 use crate::reactions::resting;
 use serde::Deserialize;
 use serde_json::Value;
@@ -124,4 +124,10 @@ pub async fn tray_action(action: String) {
 #[tauri::command]
 pub async fn tray_resize(height: f64) {
     ctx().tray_resize(height);
+}
+
+/// Re-probes every permission; the permissions screen polls this while it's open.
+#[tauri::command]
+pub async fn check_permissions() -> Vec<PermissionStatus> {
+    ctx().check_permissions().await
 }

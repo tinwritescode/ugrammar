@@ -71,6 +71,8 @@ pub struct Settings {
     pub claude_path: String,
     /// UI language; None until the user picks one on launch.
     pub language: Option<Lang>,
+    /// Accessibility was trusted at least once; a later loss is then "stale" (needs a reset), not "never granted".
+    pub accessibility_ever_granted: bool,
 }
 
 impl Default for Settings {
@@ -105,6 +107,7 @@ impl Default for Settings {
             claude_model: "haiku".into(),
             claude_path: String::new(),
             language: None,
+            accessibility_ever_granted: false,
         }
     }
 }
@@ -175,6 +178,7 @@ pub fn normalize_settings(raw: &Value) -> Settings {
         claude_model: str_or("claudeModel", d.claude_model),
         claude_path: str_or("claudePath", d.claude_path),
         language: r.get("language").and_then(|l| Lang::deserialize(l).ok()),
+        accessibility_ever_granted: is("accessibilityEverGranted", true),
     }
 }
 
@@ -356,7 +360,7 @@ mod tests {
         let dir = TempDir::new();
         let mut s = SettingsStore::new(dir.path());
         s.update(json!({ "excludedApps": [], "hotkey": { "key": "k", "mods": ["cmd"] } })).unwrap();
-        let expected = "{\n  \"endpoint\": \"http://localhost:20128/v1\",\n  \"model\": \"xpiki/gpt-6.1-sol\",\n  \"timeoutMs\": 10000,\n  \"dictionary\": [],\n  \"excludedApps\": [],\n  \"hotkey\": {\n    \"key\": \"K\",\n    \"mods\": [\n      \"cmd\"\n    ]\n  },\n  \"paused\": false,\n  \"explain\": true,\n  \"autoCheck\": false,\n  \"quickFix\": false,\n  \"style\": null,\n  \"explainLang\": \"Vietnamese\",\n  \"firstRunAcknowledged\": false,\n  \"provider\": \"openai\",\n  \"claudeModel\": \"haiku\",\n  \"claudePath\": \"\",\n  \"language\": null\n}\n";
+        let expected = "{\n  \"endpoint\": \"http://localhost:20128/v1\",\n  \"model\": \"xpiki/gpt-6.1-sol\",\n  \"timeoutMs\": 10000,\n  \"dictionary\": [],\n  \"excludedApps\": [],\n  \"hotkey\": {\n    \"key\": \"K\",\n    \"mods\": [\n      \"cmd\"\n    ]\n  },\n  \"paused\": false,\n  \"explain\": true,\n  \"autoCheck\": false,\n  \"quickFix\": false,\n  \"style\": null,\n  \"explainLang\": \"Vietnamese\",\n  \"firstRunAcknowledged\": false,\n  \"provider\": \"openai\",\n  \"claudeModel\": \"haiku\",\n  \"claudePath\": \"\",\n  \"language\": null,\n  \"accessibilityEverGranted\": false\n}\n";
         assert_eq!(fs::read_to_string(dir.path().join("settings.json")).unwrap(), expected);
         assert!(!dir.path().join("settings.json.tmp").exists());
     }
@@ -387,6 +391,14 @@ mod tests {
         assert_eq!(normalize_settings(&json!({ "style": "natural" })).style, Some(Tone::Natural));
         assert_eq!(normalize_settings(&json!({ "style": "pirate" })).style, None);
         assert_eq!(with_patch(&normalize_settings(&json!({ "style": "friendly" })), json!({ "style": null })).style, None);
+    }
+
+    #[test]
+    fn accessibility_ever_granted_is_off_by_default_and_sticky_once_set() {
+        assert!(!Settings::default().accessibility_ever_granted);
+        let granted = normalize_settings(&json!({ "accessibilityEverGranted": true }));
+        assert!(granted.accessibility_ever_granted);
+        assert!(with_patch(&granted, json!({ "model": "m" })).accessibility_ever_granted);
     }
 
     #[test]

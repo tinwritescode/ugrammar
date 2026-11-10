@@ -43,4 +43,8 @@ claudePath: string,
 /**
  * UI language; None until the user picks one on launch.
  */
-language: Lang | null, };
+language: Lang | null, 
+/**
+ * Accessibility was trusted at least once; a later loss is then "stale" (needs a reset), not "never granted".
+ */
+accessibilityEverGranted: boolean, };

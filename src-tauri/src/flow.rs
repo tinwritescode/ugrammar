@@ -38,6 +38,8 @@ pub trait FlowDeps {
     fn hide_loading(&self);
     /// Called after text was replaced (accept or quick fix); used for insights.
     fn on_applied(&self, original: &str, corrected: &str, notes: &[String]);
+    /// A real action just found Accessibility untrusted; keeps the permissions screen's cache honest.
+    fn note_accessibility_not_trusted(&self) {}
 }
 
 fn read_error(t: &Strings, e: &HelperError) -> String {
@@ -92,6 +94,7 @@ impl FixFlow {
                 d.hide_loading();
                 d.set_status(Status { kind: StatusKind::NeedsPermission, message: Some(t.grant_ax.into()) });
                 d.notify(t.needs_ax);
+                d.note_accessibility_not_trusted();
                 return FixOutcome::NeedsPermission;
             }
             Err(e) => {
@@ -182,6 +185,7 @@ mod tests {
         diffs: Cell<usize>,
         loading: Cell<usize>,
         hidden: Cell<usize>,
+        ax_lost: Cell<usize>,
     }
 
     fn sel(text: &str) -> Result<Selection, HelperError> {
@@ -212,6 +216,7 @@ mod tests {
             diffs: Cell::new(0),
             loading: Cell::new(0),
             hidden: Cell::new(0),
+            ax_lost: Cell::new(0),
         }
     }
 
@@ -266,6 +271,9 @@ mod tests {
         }
         fn on_applied(&self, _o: &str, c: &str, _n: &[String]) {
             self.applied.borrow_mut().push(c.into());
+        }
+        fn note_accessibility_not_trusted(&self) {
+            self.ax_lost.set(self.ax_lost.get() + 1);
         }
     }
 
@@ -364,6 +372,14 @@ mod tests {
         let f = Fake { sel: sel_err("accessibility_not_trusted"), ..fake() };
         assert_eq!(run(&f).await, FixOutcome::NeedsPermission);
         assert_eq!(f.status.borrow().last().unwrap().kind, StatusKind::NeedsPermission);
+        assert_eq!(f.ax_lost.get(), 1);
+    }
+
+    #[tokio::test]
+    async fn other_errors_do_not_report_accessibility_lost() {
+        let f = Fake { sel: sel_err("secure_field"), ..fake() };
+        run(&f).await;
+        assert_eq!(f.ax_lost.get(), 0);
     }
 
     #[tokio::test]

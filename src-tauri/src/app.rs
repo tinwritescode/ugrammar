@@ -7,7 +7,7 @@ pub use crate::popover::POPOVER_W;
 use crate::popover::{Closed, Expiry, Session, Ticket};
 use crate::reactions::{react, resting};
 use crate::helper_client::{HelperClient, HelperError, HotkeySlot, RangeEdit, Selection};
-use crate::ipc::{Choice, PendingFix, PopoverKind, PopoverPayload, Status, StatusKind, TrayState, UpdateNote};
+use crate::ipc::{Choice, PendingFix, PermissionId, PermissionStatus, PopoverKind, PopoverPayload, Status, StatusKind, TrayState, UpdateNote};
 use crate::ui;
 use serde_json::{json, Value};
 use std::io::Write as _;
@@ -31,6 +31,8 @@ pub const APP_NAME: &str = "ugrammar";
 const REPO_URL: &str = "https://github.com/tinwritescode/ugrammar";
 const LICENSE_URL: &str = "https://tyvn.online";
 const AX_SETTINGS_URL: &str = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
+/// Matches `identifier` in tauri.conf.json; needed to target this app with `tccutil`.
+const BUNDLE_ID: &str = "dev.ugrammar.app";
 const UPDATE_EVERY: Duration = Duration::from_secs(6 * 3600);
 /// An untouched auto-check popup moves to the menu-bar list after this long.
 const POPUP_IDLE: Duration = Duration::from_secs(8);
@@ -58,6 +60,12 @@ fn open(target: &str) {
 
 fn parse_tone(id: &str) -> Option<Tone> {
     serde_json::from_value(json!(id)).ok()
+}
+
+/// Granted before but not now: System Settings still lists the app, so it needs a reset rather
+/// than just the "open System Settings" flow a first-time grant uses.
+fn permission_is_stale(granted: bool, ever_granted: bool) -> bool {
+    !granted && ever_granted
 }
 
 fn outcome<T>(r: &Result<T, HelperError>, method: impl Fn(&T) -> Option<&str>) -> String {
@@ -112,6 +120,8 @@ pub struct Ctx {
     update_note: Mutex<Option<UpdateNote>>,
     /// Whether the Keychain holds an API key; None until first read.
     has_api_key: Mutex<Option<bool>>,
+    /// Last known Accessibility trust, refreshed on launch and by the permissions screen's polling.
+    permission_trusted: Mutex<bool>,
     started: Instant,
 }
 
@@ -181,6 +191,8 @@ pub fn init(app: &AppHandle) -> mpsc::UnboundedReceiver<HelperEvent> {
         update: Mutex::new(None),
         update_note: Mutex::new(None),
         has_api_key: Mutex::new(None),
+        // Optimistic default; `start()` probes the real value before this is ever read.
+        permission_trusted: Mutex::new(true),
         started: Instant::now(),
     };
     let _ = CTX.set(ctx);
@@ -274,6 +286,37 @@ impl Ctx {
         self.helper.trusted().await
     }
 
+    /// The permissions screen's current snapshot, from the last probe (see `check_permissions`).
+    pub fn permissions(&self) -> Vec<PermissionStatus> {
+        let granted = *self.permission_trusted.lock().unwrap();
+        let stale = permission_is_stale(granted, self.settings().accessibility_ever_granted);
+        vec![PermissionStatus { id: PermissionId::Accessibility, granted, stale }]
+    }
+
+    /// Re-probes Accessibility for real; the tray polls this while the permissions screen is open.
+    /// Self-heals the tray status once granted, and remembers the grant so a later loss reads as
+    /// stale (needs a reset) rather than "never granted".
+    pub async fn check_permissions(&'static self) -> Vec<PermissionStatus> {
+        let granted = self.ax_trusted().await;
+        *self.permission_trusted.lock().unwrap() = granted;
+        if granted {
+            if !self.settings().accessibility_ever_granted {
+                self.update_settings(json!({ "accessibilityEverGranted": true }));
+            }
+            if self.status().kind == StatusKind::NeedsPermission {
+                self.set_status(resting(&self.settings()));
+            }
+        }
+        self.permissions()
+    }
+
+    /// Clears the stale Accessibility entry System Settings keeps from a previous build (common
+    /// after a rebuild/re-sign), then asks again.
+    async fn reset_accessibility(&self) {
+        let _ = tokio::process::Command::new("/usr/bin/tccutil").args(["reset", "Accessibility", BUNDLE_ID]).output().await;
+        self.prompt_ax().await;
+    }
+
     pub fn status(&self) -> Status {
         self.status.lock().unwrap().clone()
     }
@@ -310,6 +353,7 @@ impl Ctx {
                     notes: f.notes.clone(),
                 })
                 .collect(),
+            permissions: self.permissions(),
         }
     }
 
@@ -422,6 +466,7 @@ impl Ctx {
                 self.prompt_ax().await;
                 open(AX_SETTINGS_URL);
             }
+            "reset_ax" => self.reset_accessibility().await,
             "github" => open(REPO_URL),
             "license" => open(LICENSE_URL),
             "restart" => self.app.restart(),
@@ -853,7 +898,7 @@ impl Ctx {
         }
         spawn_poll(UPDATE_EVERY, || true, move || self.check_update());
         self.set_status(resting(&self.settings()));
-        let trusted = self.ax_trusted().await;
+        let trusted = self.check_permissions().await[0].granted;
         self.register_hotkey().await;
         if self.settings().language.is_none() {
             let lang = self.language_dialog().await;
@@ -907,6 +952,19 @@ impl Ctx {
                 let _ = tx.send(());
             });
         let _ = rx.await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stale_only_when_lost_after_being_granted() {
+        assert!(!permission_is_stale(true, false));
+        assert!(!permission_is_stale(true, true));
+        assert!(!permission_is_stale(false, false));
+        assert!(permission_is_stale(false, true));
     }
 }
 
@@ -968,5 +1026,9 @@ impl FlowDeps for Ctx {
 
     fn on_applied(&self, original: &str, corrected: &str, notes: &[String]) {
         self.insights.lock().unwrap().record(original, corrected, notes);
+    }
+
+    fn note_accessibility_not_trusted(&self) {
+        *ctx().permission_trusted.lock().unwrap() = false;
     }
 }

@@ -103,6 +103,27 @@ impl Status {
     }
 }
 
+/// A macOS permission ugrammar needs. Only Accessibility is used today; the list stays an enum
+/// (rather than a bare bool) so a future permission slots in without changing the wire shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub enum PermissionId {
+    Accessibility,
+}
+
+/// Live status of one permission, for the tray's permissions screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct PermissionStatus {
+    pub id: PermissionId,
+    pub granted: bool,
+    /// Was granted before but macOS no longer trusts this build (common after a rebuild/re-sign);
+    /// System Settings still lists the app, so re-opening Settings alone won't fix it.
+    pub stale: bool,
+}
+
 /// Result of the last manual "check for updates", shown under its button until the tray closes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -134,6 +155,7 @@ pub struct TrayState {
     pub update_note: Option<UpdateNote>,
     /// Auto-check fixes not acted on yet, oldest first.
     pub pending: Vec<PendingFix>,
+    pub permissions: Vec<PermissionStatus>,
 }
 
 /// An auto-check fix waiting in the menu-bar list.

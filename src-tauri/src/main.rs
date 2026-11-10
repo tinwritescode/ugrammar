@@ -59,6 +59,7 @@ fn main() {
             commands::get_tray,
             commands::tray_action,
             commands::tray_resize,
+            commands::check_permissions,
         ])
         .setup(|app| {
             app.set_activation_policy(ActivationPolicy::Accessory);
