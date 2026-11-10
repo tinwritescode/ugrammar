@@ -53,6 +53,7 @@ const enHtml = {
   quit: "Quit",
   permissions: "Permissions",
   permissionsAllSet: "All set — ugrammar has what it needs.",
+  done: "Done",
 };
 type HtmlKey = keyof typeof enHtml;
 
@@ -164,6 +165,7 @@ const vi: Dict = {
     quit: "Thoát",
     permissions: "Quyền truy cập",
     permissionsAllSet: "Đã đủ quyền — ugrammar có mọi thứ cần thiết.",
+    done: "Xong",
   },
   status: { idle: "Sẵn sàng", checking: "Đang kiểm tra…", paused: "Đã tạm dừng", error: "Có lỗi", needs_permission: "Cần cấp quyền" },
   asleepNote: "Cú đang ngủ. Bật lại khi cần.",

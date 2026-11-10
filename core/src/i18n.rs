@@ -116,9 +116,8 @@ const EN: Strings = Strings {
     friendly: "Friendly",
     short: "Short",
     welcome_title: "Welcome to ugrammar",
-    welcome_body: "1. Grant Accessibility permission when macOS asks (System Settings → Privacy & Security → Accessibility). Needed to read and replace text.\n\
-                   2. Select text and press {hotkey} to proofread. ⌥⌘T rewrites in a tone.\n\
-                   3. Click the ug icon in the menu bar for everything else: auto-check, tone, engine, dictionary.\n\n\
+    welcome_body: "1. Select text and press {hotkey} to proofread. ⌥⌘T rewrites in a tone.\n\
+                   2. Click the ug icon in the menu bar for everything else: auto-check, tone, engine, dictionary.\n\n\
                    Privacy: checked text is sent to {endpoint} (change it from the ug menu-bar panel). Password fields and excluded apps are never read. Text is never logged or stored.",
     get_started: "Get started",
     settings_save_failed: "Could not save settings ({error}).",
@@ -164,9 +163,8 @@ const VI: Strings = Strings {
     friendly: "Thân thiện",
     short: "Ngắn gọn",
     welcome_title: "Chào mừng đến với ugrammar",
-    welcome_body: "1. Cấp quyền Accessibility khi macOS hỏi (Cài đặt hệ thống → Quyền riêng tư & Bảo mật → Trợ năng). Cần để đọc và thay chữ.\n\
-                   2. Chọn chữ rồi bấm {hotkey} để sửa. ⌥⌘T viết lại theo giọng văn.\n\
-                   3. Bấm biểu tượng ug trên thanh menu cho mọi thứ khác: tự kiểm tra, giọng văn, engine, từ điển.\n\n\
+    welcome_body: "1. Chọn chữ rồi bấm {hotkey} để sửa. ⌥⌘T viết lại theo giọng văn.\n\
+                   2. Bấm biểu tượng ug trên thanh menu cho mọi thứ khác: tự kiểm tra, giọng văn, engine, từ điển.\n\n\
                    Riêng tư: chữ cần kiểm tra được gửi tới {endpoint} (đổi trong bảng ug trên thanh menu). Ô mật khẩu và app bỏ qua không bao giờ bị đọc. Chữ không bao giờ được ghi log hay lưu lại.",
     get_started: "Bắt đầu",
     settings_save_failed: "Không lưu được cài đặt ({error}).",

@@ -44,4 +44,6 @@ export interface ProofyApi {
   appVersion(): Promise<string>;
   /** Re-probes every permission; the permissions screen polls this while it's open. */
   checkPermissions(): Promise<PermissionStatus[]>;
+  /** Fired when launch itself opens the panel on the permissions screen (missing/stale Accessibility). */
+  onOpenPermissions(cb: () => void): void;
 }

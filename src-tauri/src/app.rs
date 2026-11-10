@@ -440,8 +440,21 @@ impl Ctx {
     }
 
     pub async fn open_panel(&'static self) {
+        self.open_panel_inner(false).await;
+    }
+
+    /// Launch's entry point when Accessibility isn't trusted: lands the user on the checklist
+    /// instead of the main view, so they see the reason and the fix, not just a status dot.
+    pub async fn open_panel_on_permissions(&'static self) {
+        self.open_panel_inner(true).await;
+    }
+
+    async fn open_panel_inner(&'static self, to_permissions: bool) {
         let Some(w) = self.app.get_webview_window("tray") else { return };
         let _ = self.app.emit_to("tray", "tray:state", self.tray_state().await);
+        if to_permissions {
+            let _ = self.app.emit_to("tray", "tray:open_permissions", ());
+        }
         if let Some(icon) = ui::tray_rect(&self.app) {
             let (x, y) = placement::tray_at(icon, &ui::screens(&self.app));
             ui::place(&self.app, "tray", x, y);
@@ -916,7 +929,9 @@ impl Ctx {
         }
         if !trusted {
             self.set_status(Status { kind: StatusKind::NeedsPermission, message: Some(self.settings().strings().grant_ax.into()) });
-            self.prompt_ax().await;
+            // The checklist explains why and has the button; firing the native prompt unasked on
+            // every launch (the old behavior) is the nagging this screen replaces.
+            self.open_panel_on_permissions().await;
         }
     }
 

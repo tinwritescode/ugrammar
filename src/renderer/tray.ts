@@ -233,6 +233,7 @@ function renderPermissions(items: PermissionStatus[]) {
   $("permList").replaceChildren(...items.map(permissionCard));
   const allGranted = items.length > 0 && items.every((p) => p.granted);
   $("permAllSet").hidden = !allGranted;
+  $("permDone").hidden = !allGranted;
   $("permSummary").textContent = allGranted ? t.granted : t.notGranted;
   $("permSummary").className = `aside ${allGranted ? "ok" : "bad"}`;
 }
@@ -309,6 +310,7 @@ function showView(v: "main" | "setup" | "permissions") {
 $("toSetup").onclick = () => showView("setup");
 $("toPermissions").onclick = () => showView("permissions");
 $("back").onclick = () => showView("main");
+$("permDone").onclick = () => showView("main");
 $<HTMLInputElement>("power").onchange = (e) => save({ paused: !(e.target as HTMLInputElement).checked });
 
 let scrollIdle = 0;
@@ -396,6 +398,7 @@ $("pickApp").onclick = async () => excludeApp(await proofy.pickApp());
 $("clearInsights").onclick = () => void proofy.clearInsights();
 
 proofy.onTray(render);
+proofy.onOpenPermissions(() => showView("permissions"));
 // Replay the drop-in each time the panel opens, not on live updates.
 window.addEventListener("focus", () => { panel.style.animation = "none"; void panel.offsetWidth; panel.style.animation = ""; pollPermissions(); });
 // Each open starts on the main view; not on blur, which a native dialog over the panel also fires.
