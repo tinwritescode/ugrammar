@@ -33,6 +33,7 @@ export interface ProofyApi {
   checkUpdate(): void;
   clearInsights(): Promise<void>;
   saveSettings(patch: Partial<Settings>): Promise<void>;
+  setLaunchAtLogin(enabled: boolean): Promise<void>;
   setApiKey(key: string): Promise<void>;
   testConnection(draft: { settings: EngineDraft; apiKey?: string }): Promise<TestResult>;
   pickApp(): Promise<string | null>;

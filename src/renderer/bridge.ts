@@ -15,6 +15,7 @@ export const proofy: ProofyApi = {
   checkUpdate: () => void invoke("check_update_now"),
   clearInsights: () => invoke("clear_insights"),
   saveSettings: (patch) => invoke("save_settings", { patch }),
+  setLaunchAtLogin: (enabled) => invoke("set_launch_at_login", { enabled }),
   setApiKey: (key) => invoke("set_api_key", { key }),
   testConnection: (draft) => invoke("test_connection", { draft }),
   pickApp: () => invoke("pick_app"),

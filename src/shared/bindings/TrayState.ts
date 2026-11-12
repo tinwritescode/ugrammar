@@ -14,4 +14,8 @@ update?: string, updateNote?: UpdateNote,
 /**
  * Auto-check fixes not acted on yet, oldest first.
  */
-pending: Array<PendingFix>, permissions: Array<PermissionStatus>, };
+pending: Array<PendingFix>, permissions: Array<PermissionStatus>, 
+/**
+ * Read from the macOS login item, not settings.json.
+ */
+launchAtLogin: boolean, };

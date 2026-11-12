@@ -44,6 +44,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .invoke_handler(tauri::generate_handler![
             commands::popover_action,
             commands::pending_action,
@@ -60,6 +61,7 @@ fn main() {
             commands::tray_action,
             commands::tray_resize,
             commands::check_permissions,
+            commands::set_launch_at_login,
         ])
         .setup(|app| {
             app.set_activation_policy(ActivationPolicy::Accessory);

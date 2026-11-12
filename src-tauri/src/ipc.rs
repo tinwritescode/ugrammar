@@ -156,6 +156,8 @@ pub struct TrayState {
     /// Auto-check fixes not acted on yet, oldest first.
     pub pending: Vec<PendingFix>,
     pub permissions: Vec<PermissionStatus>,
+    /// Read from the macOS login item, not settings.json.
+    pub launch_at_login: bool,
 }
 
 /// An auto-check fix waiting in the menu-bar list.

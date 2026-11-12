@@ -257,6 +257,7 @@ function render(s: TrayState) {
   panel.dataset.paused = String(cfg.paused);
   $("statusText").textContent = s.message && s.status === "error" ? `${t.status.error} — ${s.message}` : t.status[s.status];
   $<HTMLInputElement>("power").checked = !cfg.paused;
+  $<HTMLInputElement>("launchAtLogin").checked = s.launchAtLogin;
   $("hotkey").replaceChildren(...keycaps(s.hotkey));
   renderHero(s);
   $("perm").hidden = s.status !== "needs_permission";
@@ -312,6 +313,7 @@ $("toPermissions").onclick = () => showView("permissions");
 $("back").onclick = () => showView("main");
 $("permDone").onclick = () => showView("main");
 $<HTMLInputElement>("power").onchange = (e) => save({ paused: !(e.target as HTMLInputElement).checked });
+$<HTMLInputElement>("launchAtLogin").onchange = (e) => void proofy.setLaunchAtLogin((e.target as HTMLInputElement).checked);
 
 let scrollIdle = 0;
 panel.addEventListener("scroll", () => {

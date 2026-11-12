@@ -4,6 +4,7 @@ use crate::reactions::resting;
 use serde::Deserialize;
 use serde_json::Value;
 use tauri::Manager;
+use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_dialog::DialogExt;
 use tokio::sync::oneshot;
 use ugrammar_core::engine::{ConnectionStatus, EngineSetup, Purpose};
@@ -124,6 +125,15 @@ pub async fn tray_action(action: String) {
 #[tauri::command]
 pub async fn tray_resize(height: f64) {
     ctx().tray_resize(height);
+}
+
+/// Adds or removes the login item. A failed toggle leaves it as it was, and the refreshed state shows that.
+#[tauri::command]
+pub async fn set_launch_at_login(enabled: bool) {
+    let c = ctx();
+    let launch = c.app.autolaunch();
+    let _ = if enabled { launch.enable() } else { launch.disable() };
+    c.refresh_tray();
 }
 
 /// Re-probes every permission; the permissions screen polls this while it's open.

@@ -17,6 +17,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime};
 use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::{AppHandle, Emitter, Manager, Wry};
+use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_updater::UpdaterExt;
@@ -354,6 +355,7 @@ impl Ctx {
                 })
                 .collect(),
             permissions: self.permissions(),
+            launch_at_login: self.app.autolaunch().is_enabled().unwrap_or(false),
         }
     }
 
