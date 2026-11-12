@@ -26,5 +26,7 @@ export const proofy: ProofyApi = {
   trayResize: (height) => void invoke("tray_resize", { height }),
   appVersion: getVersion,
   checkPermissions: () => invoke("check_permissions"),
+  pinTray: (pinned) => void invoke("pin_tray", { pinned }),
+  dragApp: () => void invoke("drag_app"),
   onOpenPermissions: (cb) => void listen("tray:open_permissions", () => cb()),
 };

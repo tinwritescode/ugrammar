@@ -23,7 +23,7 @@ export type TestResult = ConnectionStatus;
 /** Engine settings typed in the setup view, tested before they are saved. */
 export type EngineDraft = Pick<Settings, "provider" | "endpoint" | "model" | "claudeModel" | "claudePath">;
 
-export type TrayAction = "quit" | "ax" | "reset_ax" | "github" | "license" | "restart" | Tone;
+export type TrayAction = "quit" | "ax" | "reset_ax" | "reveal_app" | "github" | "license" | "restart" | Tone;
 
 export interface ProofyApi {
   onPopover(cb: (p: PopoverPayload) => void): void;
@@ -45,6 +45,10 @@ export interface ProofyApi {
   appVersion(): Promise<string>;
   /** Re-probes every permission; the permissions screen polls this while it's open. */
   checkPermissions(): Promise<PermissionStatus[]>;
+  /** Keeps the panel up when it loses focus, while the user grants a permission in System Settings. */
+  pinTray(pinned: boolean): void;
+  /** Starts a native drag of the app itself, to drop on the Accessibility list. */
+  dragApp(): void;
   /** Fired when launch itself opens the panel on the permissions screen (missing/stale Accessibility). */
   onOpenPermissions(cb: () => void): void;
 }

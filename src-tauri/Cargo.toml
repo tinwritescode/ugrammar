@@ -27,6 +27,7 @@ objc2-foundation = "0.3.2"
 objc2 = "0.6.5"
 tauri-plugin-updater = "2"
 tauri-plugin-autostart = "2"
+drag = "2.1"
 
 [dev-dependencies]
 ts-rs = "12.0.1"

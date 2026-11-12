@@ -219,23 +219,52 @@ const PERMISSION_ICON: Record<PermissionId, string> = {
   accessibility: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/>',
 };
 
-function permissionCard(p: PermissionStatus) {
-  const head = el("div", { className: "cardHead" },
-    el("span", { className: "grow" }, el("span", { className: "tile" }, svg(PERMISSION_ICON[p.id])), el("strong", {}, t.permissionNames[p.id])),
-    el("span", { className: p.granted ? "ok" : "bad" }, p.granted ? t.granted : t.notGranted));
-  const children: HTMLElement[] = [head, el("p", { className: "foot" }, t.permissionReasons[p.id])];
-  if (p.stale) children.push(el("p", { className: "note" }, t.staleHint));
-  children.push(el("button", { className: "primary", onclick: () => proofy.trayAction(p.stale ? "reset_ax" : "ax") }, p.stale ? t.resetAccess : t.openSettings));
-  return el("div", { className: "permCard" }, ...children);
+const GRIP = '<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>';
+
+const step = (n: number, title: string, ...body: (Node | string)[]) =>
+  el("li", {}, el("span", { className: "num" }, String(n)), el("div", { className: "grow" }, el("strong", {}, title), ...body));
+
+function permissionSteps(p: PermissionStatus) {
+  const openSettings = el("button", { className: p.stale ? "" : "primary", onclick: () => proofy.trayAction("ax") }, t.openSettings);
+  const buttons = el("div", { className: "inline" }, ...(p.stale ? [el("button", { className: "primary", onclick: () => proofy.trayAction("reset_ax") }, t.resetAccess)] : []), openSettings);
+  // The webview's own drag cannot carry a file to another app; the backend starts a native one.
+  const dragTile = el("div", { className: "dragTile", draggable: true, ondragstart: (e) => { e.preventDefault(); proofy.dragApp(); } },
+    el("img", { src: "app-icon.png", alt: "", draggable: false }),
+    el("span", { className: "grow" }, el("strong", {}, "ugrammar"), el("span", {}, t.dragMe)), svg(GRIP));
+  return el("ol", { className: "steps group" },
+    step(1, t.stepOpen, buttons, ...(p.stale ? [el("p", { className: "foot" }, t.staleHint)] : [])),
+    step(2, t.stepEnable, el("p", { className: "foot" }, t.stepEnableHint), dragTile,
+      el("button", { className: "ghost link", onclick: () => proofy.trayAction("reveal_app") }, t.showInFinder)),
+    step(3, t.stepWait, el("p", { className: "foot waiting" }, el("i", { className: "dot" }), t.waiting)));
 }
 
+function permissionsView(p: PermissionStatus) {
+  const hero = (mood: Mood, title: string) =>
+    el("section", { className: "hero" }, el("span", {}, mascot(mood, 64)), el("div", { className: "heroText" }, el("strong", {}, title), el("span", { className: "foot" }, t.permissionReasons[p.id])));
+  return p.granted
+    ? [hero("happy", t.html.permissionsAllSet), el("button", { className: "primary", onclick: () => showView("main") }, t.html.done)]
+    : [hero("key", t.permissionNeeded), permissionSteps(p)];
+}
+
+/** What the permissions screen last drew; the poll redraws only on a change, so a drag in progress survives it. */
+let permDrawn = "";
+
 function renderPermissions(items: PermissionStatus[]) {
-  $("permList").replaceChildren(...items.map(permissionCard));
-  const allGranted = items.length > 0 && items.every((p) => p.granted);
-  $("permAllSet").hidden = !allGranted;
-  $("permDone").hidden = !allGranted;
-  $("permSummary").textContent = allGranted ? t.granted : t.notGranted;
-  $("permSummary").className = `aside ${allGranted ? "ok" : "bad"}`;
+  const p = items[0];
+  if (!p) return;
+  $("permSummary").textContent = p.granted ? t.granted : t.notGranted;
+  $("permSummary").className = `aside ${p.granted ? "ok" : "bad"}`;
+  const key = `${document.documentElement.lang}|${p.granted}|${p.stale}`;
+  if (key === permDrawn) return;
+  permDrawn = key;
+  $("permissionsView").replaceChildren(...permissionsView(p));
+  pinWhilePending();
+  resize();
+}
+
+/** The steps stay up beside System Settings until the grant lands. */
+function pinWhilePending() {
+  proofy.pinTray(panel.dataset.view === "permissions" && !state?.permissions[0]?.granted);
 }
 
 /** Re-probes while the permissions screen is open, so a grant made in System Settings shows up live. */
@@ -306,12 +335,12 @@ function showView(v: "main" | "setup" | "permissions") {
   setRecording(false);
   panel.scrollTop = 0;
   resize();
+  pinWhilePending();
   if (v === "permissions") pollPermissions();
 }
 $("toSetup").onclick = () => showView("setup");
 $("toPermissions").onclick = () => showView("permissions");
 $("back").onclick = () => showView("main");
-$("permDone").onclick = () => showView("main");
 $<HTMLInputElement>("power").onchange = (e) => save({ paused: !(e.target as HTMLInputElement).checked });
 $<HTMLInputElement>("launchAtLogin").onchange = (e) => void proofy.setLaunchAtLogin((e.target as HTMLInputElement).checked);
 

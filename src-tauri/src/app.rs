@@ -59,6 +59,16 @@ fn open(target: &str) {
     let _ = std::process::Command::new("/usr/bin/open").arg(target).spawn();
 }
 
+/// The `.app` a binary runs from, so the permissions screen can hand the user the thing macOS lists;
+/// a dev run has no bundle and gets the bare executable.
+fn bundle_of(exe: &Path) -> PathBuf {
+    exe.ancestors().find(|p| p.extension().is_some_and(|e| e == "app")).unwrap_or(exe).to_path_buf()
+}
+
+pub fn app_bundle() -> PathBuf {
+    bundle_of(&std::env::current_exe().unwrap_or_default())
+}
+
 fn parse_tone(id: &str) -> Option<Tone> {
     serde_json::from_value(json!(id)).ok()
 }
@@ -474,7 +484,10 @@ impl Ctx {
     }
 
     pub async fn tray_action(&'static self, a: &str) {
-        self.hide_tray();
+        // The permission steps stay on screen beside System Settings and Finder.
+        if !matches!(a, "ax" | "reset_ax" | "reveal_app") {
+            self.hide_tray();
+        }
         match a {
             "quit" => self.app.exit(0),
             "ax" => {
@@ -482,6 +495,9 @@ impl Ctx {
                 open(AX_SETTINGS_URL);
             }
             "reset_ax" => self.reset_accessibility().await,
+            "reveal_app" => {
+                let _ = std::process::Command::new("/usr/bin/open").arg("-R").arg(app_bundle()).spawn();
+            }
             "github" => open(REPO_URL),
             "license" => open(LICENSE_URL),
             "restart" => self.app.restart(),
@@ -983,6 +999,8 @@ mod tests {
         assert!(!permission_is_stale(true, true));
         assert!(!permission_is_stale(false, false));
         assert!(permission_is_stale(false, true));
+        assert_eq!(bundle_of(Path::new("/Applications/ugrammar.app/Contents/MacOS/ugrammar")), Path::new("/Applications/ugrammar.app"));
+        assert_eq!(bundle_of(Path::new("/repo/target/debug/ugrammar")), Path::new("/repo/target/debug/ugrammar"));
     }
 }
 

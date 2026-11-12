@@ -15,7 +15,7 @@ header {
   position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 6px; padding: 12px 12px 10px 14px;
   background: var(--header); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
 }
-[data-view="setup"] header { padding-left: 8px; }
+#panel:not([data-view="main"]) header { padding-left: 8px; }
 .who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; line-height: 1.3; }
 .who strong { font: 20px/1.1 var(--font-hand); }
 [data-view="main"] #statusLine { display: none; }
@@ -27,10 +27,10 @@ header {
 [data-status="error"] .dot, [data-status="needs_permission"] .dot { background: var(--danger); }
 @keyframes pulse { 50% { opacity: .35; } }
 button.icon { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; color: var(--fg-2); }
-[data-view="main"] #back, [data-view="setup"] #toSetup { display: none; }
+[data-view="main"] #back, #panel:not([data-view="main"]) #toSetup { display: none; }
 
 .view { display: flex; flex-direction: column; gap: 14px; padding: 4px 12px 12px; }
-[data-view="main"] #setupView, [data-view="setup"] #mainView { display: none; }
+#panel:not([data-view="main"]) #mainView, #panel:not([data-view="setup"]) #setupView, #panel:not([data-view="permissions"]) #permissionsView { display: none; }
 .section { display: flex; flex-direction: column; gap: 6px; }
 .label { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px; font: 15px/1.2 var(--font-hand); color: var(--fg); }
 .aside { font: 12px var(--font-body); color: var(--fg-3); }
@@ -75,6 +75,7 @@ button.icon { display: grid; place-items: center; width: 28px; height: 28px; pad
 .group.pad { padding: 12px 14px; }
 .row { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; }
 .row + .row { border-top: 1.5px dashed var(--hair); }
+button.row { width: 100%; height: auto; border: 0; font: inherit; text-align: left; }
 label.row { transition: background-color .12s; }
 label.row:hover { background-color: var(--row-hover); }
 /* Rows fill the card edge to edge, so the first and last follow its corners. */
@@ -148,6 +149,25 @@ button.link { height: 26px; padding: 0 8px; color: var(--primary-fg); }
 .recorder.fixed { border: 0; background: transparent; opacity: .7; }
 .row .recorder { margin-right: -2px; }
 .row:has(.recorder) { min-height: 40px; padding: 0 8px 0 12px; }
+
+.steps { list-style: none; margin: 0; padding: 0; }
+.steps li { display: flex; align-items: flex-start; gap: 10px; padding: 12px; }
+.steps li + li { border-top: 1.5px dashed var(--hair); }
+.steps .num { display: grid; place-items: center; flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%; background: var(--primary); color: var(--on-primary); font: 14px var(--font-hand); }
+.steps .grow { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.steps strong { font: 15px/24px var(--font-hand); font-weight: 400; }
+.steps button.link { margin: -4px 0 0 -8px; }
+.dragTile { display: flex; align-items: center; gap: 10px; align-self: stretch; padding: 8px 10px; border-radius: 14px; border: 1.5px dashed var(--primary-fg); background: var(--primary-tint); cursor: grab; }
+.dragTile:active { cursor: grabbing; }
+.dragTile img { width: 40px; height: 40px; }
+.dragTile .grow { gap: 0; line-height: 1.3; }
+.dragTile .grow span { font-size: 12px; color: var(--fg-2); }
+.dragTile svg { width: 16px; height: 16px; color: var(--fg-3); }
+.waiting { display: flex; align-items: center; gap: 6px; }
+.waiting .dot { background: var(--primary-fg); animation: pulse 1s ease-in-out infinite; }
+#permissionsView > button { height: 36px; }
+#permissionsView .hero strong { font: 20px/1.15 var(--font-hand); font-weight: 400; }
+#permissionsView .hero > span { flex-shrink: 0; }
 
 .stack { display: flex; flex-direction: column; gap: 10px; }
 .tags { display: flex; flex-wrap: wrap; gap: 6px; }

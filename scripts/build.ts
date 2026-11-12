@@ -9,5 +9,5 @@ if (!r.success) {
   for (const l of r.logs) console.error(l);
   process.exit(1);
 }
-for (const f of [...pages.flatMap((p) => [`${p}.html`, `${p}.css`]), "theme.css", "fonts"]) cpSync(`src/renderer/${f}`, `dist/${f}`, { recursive: true });
+for (const f of [...pages.flatMap((p) => [`${p}.html`, `${p}.css`]), "theme.css", "app-icon.png", "fonts"]) cpSync(`src/renderer/${f}`, `dist/${f}`, { recursive: true });
 console.log("built");

@@ -141,3 +141,19 @@ pub async fn set_launch_at_login(enabled: bool) {
 pub async fn check_permissions() -> Vec<PermissionStatus> {
     ctx().check_permissions().await
 }
+
+/// Keeps the panel up while the user works in System Settings; the permissions screen sets it while a grant is pending.
+#[tauri::command]
+pub async fn pin_tray(pinned: bool) {
+    ctx().pin_tray(pinned);
+}
+
+/// Starts a native drag of this app's bundle, to drop on the Accessibility list in System Settings.
+#[tauri::command]
+pub fn drag_app(window: tauri::WebviewWindow) {
+    let w = window.clone();
+    let _ = window.run_on_main_thread(move || {
+        let icon = drag::Image::Raw(include_bytes!("../../src/renderer/app-icon.png").to_vec());
+        let _ = drag::start_drag(&w, drag::DragItem::Files(vec![crate::app::app_bundle()]), icon, |_, _| {}, drag::Options::default());
+    });
+}
