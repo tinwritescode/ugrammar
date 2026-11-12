@@ -171,7 +171,7 @@ pub fn normalize_settings(raw: &Value) -> Settings {
         explain: !is("explain", false),
         auto_check: is("autoCheck", true),
         quick_fix: is("quickFix", true),
-        style: r.get("style").and_then(|v| Tone::deserialize(v).ok()),
+        style: r.get("style").and_then(|v| Tone::deserialize(v).ok()).filter(|t| *t != Tone::Translate),
         explain_lang: str_or("explainLang", d.explain_lang),
         first_run_acknowledged: is("firstRunAcknowledged", true),
         provider: r.get("provider").and_then(|p| Provider::deserialize(p).ok()).unwrap_or(d.provider),
@@ -390,6 +390,7 @@ mod tests {
         assert_eq!(normalize_settings(&json!({ "style": "formal" })).style, Some(Tone::Formal));
         assert_eq!(normalize_settings(&json!({ "style": "natural" })).style, Some(Tone::Natural));
         assert_eq!(normalize_settings(&json!({ "style": "pirate" })).style, None);
+        assert_eq!(normalize_settings(&json!({ "style": "translate" })).style, None, "Translate is a one-off pick, never a saved style");
         assert_eq!(with_patch(&normalize_settings(&json!({ "style": "friendly" })), json!({ "style": null })).style, None);
     }
 

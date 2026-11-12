@@ -46,7 +46,7 @@ Automated: `bun test` (engine, diff, settings, flow) and `bun run typecheck`.
 ## Auto-check, quick fix, tone (manual)
 - Tray → "Tự kiểm tra khi gõ" → "Hiện ngay". In Notes/TextEdit type `She dont like it.` and wait ~1s: the diff popover opens above the sentence's line; ⌘↩ / Áp dụng replaces only that sentence.
 - Enable "Hotkey fixes at once": ⌥⌘G replaces directly; ⌘Z restores.
-- ⌥⌘T on a selection → menu Formal/Friendly/Short → diff popover.
+- ⌥⌘T on a selection → menu Formal/Friendly/Short/Translate → diff popover.
 - Fix the same mistake twice → Settings → Insights lists it.
 - Slack / Claude desktop / Chrome contenteditable: type `She dont like it.` → diff popover opens above the sentence (bounds come from the AXStaticText leaves). Click a toolbar button and back: no re-check.
 - While a check runs: no spinner near the caret; the menu bar reads `ug…`. Popover hint shows only ⌘↩; Esc stays with the app.

@@ -66,6 +66,7 @@ pub struct Strings {
     pub formal: &'static str,
     pub friendly: &'static str,
     pub short: &'static str,
+    pub translate: &'static str,
     pub welcome_title: &'static str,
     /// {hotkey} {endpoint}
     pub welcome_body: &'static str,
@@ -115,6 +116,7 @@ const EN: Strings = Strings {
     formal: "Formal",
     friendly: "Friendly",
     short: "Short",
+    translate: "Translate",
     welcome_title: "Welcome to ugrammar",
     welcome_body: "1. Select text and press {hotkey} to proofread. ⌥⌘T rewrites in a tone.\n\
                    2. Click the ug icon in the menu bar for everything else: auto-check, tone, engine, dictionary.\n\n\
@@ -162,6 +164,7 @@ const VI: Strings = Strings {
     formal: "Trang trọng",
     friendly: "Thân thiện",
     short: "Ngắn gọn",
+    translate: "Dịch",
     welcome_title: "Chào mừng đến với ugrammar",
     welcome_body: "1. Chọn chữ rồi bấm {hotkey} để sửa. ⌥⌘T viết lại theo giọng văn.\n\
                    2. Bấm biểu tượng ug trên thanh menu cho mọi thứ khác: tự kiểm tra, giọng văn, engine, từ điển.\n\n\

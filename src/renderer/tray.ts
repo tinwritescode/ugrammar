@@ -36,7 +36,7 @@ const uiLangSel = $<HTMLSelectElement>("language");
 const LANGS: Record<Lang, true> = { en: true, vi: true };
 const isLang = (v: string): v is Lang => Object.hasOwn(LANGS, v);
 const styleSel = $<HTMLSelectElement>("style");
-const TONES: Record<Tone, true> = { natural: true, formal: true, friendly: true, short: true };
+const TONES: Record<Tone, true> = { natural: true, formal: true, friendly: true, short: true, translate: true };
 const isTone = (v: string | undefined): v is Tone => v !== undefined && Object.hasOwn(TONES, v);
 
 /** Re-labels the page when the picked language changes; the explain-language options are rebuilt in it. */

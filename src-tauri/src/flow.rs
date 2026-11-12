@@ -148,7 +148,10 @@ impl FixFlow {
             d.notify(&write_error(t, &e));
             return FixOutcome::WriteFailed;
         }
-        d.on_applied(text, &corrected, &notes);
+        // Insights count repeated grammar mistakes; a translation is not one.
+        if tone != Some(Tone::Translate) {
+            d.on_applied(text, &corrected, &notes);
+        }
         FixOutcome::Applied
     }
 }
@@ -295,6 +298,17 @@ mod tests {
         let f = Fake { quick_fix: true, diff: Choice::Dismiss, ..fake() };
         assert_eq!(FixFlow::default().run(&f, Some(Tone::Formal)).await, FixOutcome::Dismissed);
         assert_eq!(f.diffs.get(), 1);
+    }
+
+    #[tokio::test]
+    async fn an_accepted_translation_is_written_but_not_recorded_for_insights() {
+        let f = fake();
+        assert_eq!(FixFlow::default().run(&f, Some(Tone::Translate)).await, FixOutcome::Applied);
+        assert_eq!(*f.writes.borrow(), ["I have an apple."]);
+        assert!(f.applied.borrow().is_empty());
+        let g = fake();
+        FixFlow::default().run(&g, Some(Tone::Formal)).await;
+        assert_eq!(g.applied.borrow().len(), 1, "other tones still count");
     }
 
     #[tokio::test]

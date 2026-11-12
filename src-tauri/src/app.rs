@@ -628,7 +628,7 @@ impl Ctx {
         let _ = self.helper.set_hotkey(HotkeySlot::Tone, &tone).await;
     }
 
-    /// Tone hotkey: pick Natural / Formal / Friendly / Short from a menu over the app being written in.
+    /// Tone hotkey: pick Natural / Formal / Friendly / Short / Translate from a menu over the app being written in.
     pub fn on_hotkey2(&self) {
         self.close_popover(Choice::Later);
         let (a, t) = (&self.app, self.settings().strings());
@@ -641,6 +641,7 @@ impl Ctx {
                     &MenuItem::with_id(a, "tone_formal", t.formal, true, None::<&str>)?,
                     &MenuItem::with_id(a, "tone_friendly", t.friendly, true, None::<&str>)?,
                     &MenuItem::with_id(a, "tone_short", t.short, true, None::<&str>)?,
+                    &MenuItem::with_id(a, "tone_translate", t.translate, true, None::<&str>)?,
                 ],
             )
         })();
