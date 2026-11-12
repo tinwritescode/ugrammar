@@ -1012,6 +1012,12 @@ impl FlowDeps for Ctx {
         r.map(drop)
     }
 
+    async fn copy_text(&self, text: &str) -> Result<(), HelperError> {
+        let r = self.helper.copy(text).await;
+        debug(&format!("copy {}", outcome(&r, |_| None))); // never the text
+        r
+    }
+
     async fn check(&self, text: &str, tone: Option<Tone>) -> Result<(String, Vec<String>), String> {
         self.check_text(text.into(), tone, Purpose::Hotkey).await
     }

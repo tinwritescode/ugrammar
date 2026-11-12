@@ -207,6 +207,11 @@ impl<T: Transport> HelperClient<T> {
         Ok(w.method)
     }
 
+    /// Sets the clipboard to `text`; no paste, and the old contents are not restored.
+    pub async fn copy(&self, text: &str) -> Result<(), HelperError> {
+        self.raw("copy", json!({ "text": text }), secs(3)).await.map(drop)
+    }
+
     /// Under the selection, else the focused field; None when there is nothing visible to anchor to.
     pub async fn caret(&self, excluded: &[String]) -> Option<Caret> {
         let r = self.raw("caret", json!({ "excluded": excluded, "deep": true }), Duration::from_millis(1500)).await.ok()?;
@@ -321,6 +326,15 @@ mod tests {
         }
         let (c, _) = client(|_, _| json!({ "ok": true, "text": "" }));
         assert_eq!(c.read(&[]).await.unwrap_err(), HelperError::NoSelection);
+    }
+
+    #[tokio::test]
+    async fn copy_sends_the_text_and_surfaces_errors() {
+        let (c, f) = client(|_, _| json!({ "ok": true }));
+        c.copy("I have").await.unwrap();
+        assert_eq!(f.sent.lock().unwrap()[0], ("copy".into(), json!({ "text": "I have" })));
+        let (c, _) = client(|_, _| json!({ "ok": false, "error": "missing_text" }));
+        assert_eq!(c.copy("x").await.unwrap_err(), HelperError::Other("missing_text".into()));
     }
 
     #[tokio::test]

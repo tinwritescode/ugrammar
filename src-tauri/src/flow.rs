@@ -26,6 +26,8 @@ pub trait FlowDeps {
     fn settings(&self) -> Settings;
     async fn read_selection(&self, excluded: &[String]) -> Result<Selection, HelperError>;
     async fn write_selection(&self, text: &str, pid: Option<i64>, method: Option<&str>) -> Result<(), HelperError>;
+    /// Puts text on the system clipboard, for the user to paste themselves.
+    async fn copy_text(&self, text: &str) -> Result<(), HelperError>;
     /// Engine call with the settings' dictionary and explain options; Err carries the message.
     async fn check(&self, text: &str, tone: Option<Tone>) -> Result<(String, Vec<String>), String>;
     fn set_status(&self, s: Status);
@@ -56,6 +58,16 @@ fn write_error(t: &Strings, e: &HelperError) -> String {
         HelperError::FocusChanged => t.focus_changed.into(),
         other => fill(t.write_failed, &[("code", &other.to_string())]),
     }
+}
+
+/// The write failed: keep the fix on the clipboard so the wait is not lost, and say so only if that worked.
+async fn write_failed<D: FlowDeps>(d: &D, t: &Strings, e: &HelperError, corrected: &str) -> FixOutcome {
+    let msg = write_error(t, e);
+    d.notify(&match d.copy_text(corrected).await {
+        Ok(()) => format!("{msg} {}", t.fix_on_clipboard),
+        Err(_) => msg,
+    });
+    FixOutcome::WriteFailed
 }
 
 struct Busy<'a>(&'a AtomicBool);
@@ -132,8 +144,7 @@ impl FixFlow {
         if s.quick_fix && tone.is_none() {
             if let Err(e) = d.write_selection(&corrected, sel.pid, sel.method.as_deref()).await {
                 d.hide_loading();
-                d.notify(&write_error(t, &e));
-                return FixOutcome::WriteFailed;
+                return write_failed(d, t, &e, &corrected).await;
             }
             d.on_applied(text, &corrected, &notes);
             d.show_message(t.applied);
@@ -145,8 +156,7 @@ impl FixFlow {
         }
 
         if let Err(e) = d.write_selection(&corrected, sel.pid, sel.method.as_deref()).await {
-            d.notify(&write_error(t, &e));
-            return FixOutcome::WriteFailed;
+            return write_failed(d, t, &e, &corrected).await;
         }
         // Insights count repeated grammar mistakes; a translation is not one.
         if tone != Some(Tone::Translate) {
@@ -175,6 +185,8 @@ mod tests {
         language: Option<Lang>,
         sel: Result<Selection, HelperError>,
         write_ok: Option<&'static str>,
+        copy_fails: bool,
+        copies: RefCell<Vec<String>>,
         engine: Engine,
         diff: Choice,
         gate: RefCell<Option<oneshot::Receiver<()>>>,
@@ -206,6 +218,8 @@ mod tests {
             language: None,
             sel: sel("I has a apple."),
             write_ok: None,
+            copy_fails: false,
+            copies: RefCell::default(),
             engine: Engine::Fix,
             diff: Choice::Accept,
             gate: RefCell::new(None),
@@ -240,6 +254,13 @@ mod tests {
                 return Err(e.to_string().into());
             }
             self.writes.borrow_mut().push(text.into());
+            Ok(())
+        }
+        async fn copy_text(&self, text: &str) -> Result<(), HelperError> {
+            if self.copy_fails {
+                return Err("boom".to_string().into());
+            }
+            self.copies.borrow_mut().push(text.into());
             Ok(())
         }
         async fn check(&self, text: &str, _tone: Option<Tone>) -> Result<(String, Vec<String>), String> {
@@ -408,6 +429,26 @@ mod tests {
         let f = Fake { write_ok: Some("focus_changed"), ..fake() };
         assert_eq!(run(&f).await, FixOutcome::WriteFailed);
         assert!(f.notes.borrow()[0].contains("Focus changed"));
+    }
+
+    #[tokio::test]
+    async fn write_failure_copies_the_fix_and_says_so_in_both_paths() {
+        for quick_fix in [false, true] {
+            let f = Fake { quick_fix, write_ok: Some("focus_changed"), ..fake() };
+            assert_eq!(run(&f).await, FixOutcome::WriteFailed);
+            assert_eq!(*f.copies.borrow(), ["I have an apple."]);
+            let n = f.notes.borrow()[0].clone();
+            assert!(n.contains("Focus changed") && n.contains("clipboard"), "{n}");
+        }
+    }
+
+    #[tokio::test]
+    async fn write_failure_with_failed_copy_claims_nothing_about_the_clipboard() {
+        for quick_fix in [false, true] {
+            let f = Fake { quick_fix, write_ok: Some("focus_changed"), copy_fails: true, ..fake() };
+            assert_eq!(run(&f).await, FixOutcome::WriteFailed);
+            assert_eq!(*f.notes.borrow(), [write_error(ugrammar_core::i18n::strings(Lang::En), &HelperError::FocusChanged)]);
+        }
     }
 
     #[tokio::test]

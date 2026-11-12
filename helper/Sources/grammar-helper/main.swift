@@ -12,6 +12,7 @@ import Security
 //      {"cmd":"keychain_get|keychain_set|keychain_delete","service":"..","account":"..","value":".."}
 //      {"cmd":"app_info","ids":["bundle.id"]} -> {"apps":[{"id":"..","name":"..","icon":"<base64 png>"}]}
 //      {"cmd":"activate","pid":123}
+//      {"id":4,"cmd":"copy","text":".."} -> sets the clipboard text; no paste, previous contents are not restored
 // Out: {"id":1,"ok":true,...} | {"id":1,"ok":false,"error":"..."} | {"event":"hotkey","slot":1}
 
 let out = FileHandle.standardOutput
@@ -298,6 +299,14 @@ func handleActivate(_ id: Any?, _ msg: [String: Any]) {
     reply(id, ok, [:])
 }
 
+/// Leaves `text` on the clipboard for the user to paste: unlike clipboardPaste, no ⌘V and no restore.
+func handleCopy(_ id: Any?, _ msg: [String: Any]) {
+    guard let text = msg["text"] as? String else { return reply(id, false, ["error": "missing_text"]) }
+    let pb = NSPasteboard.general
+    pb.clearContents()
+    reply(id, pb.setString(text, forType: .string), [:])
+}
+
 /// Replace one range of the focused field, only if it still holds `expect` (the user may have kept typing).
 func handleReplaceRange(_ id: Any?, _ msg: [String: Any]) {
     guard axTrusted() else { return reply(id, false, ["error": "accessibility_not_trusted"]) }
@@ -504,6 +513,7 @@ func dispatch(_ msg: [String: Any]) {
     case "replace_range": handleReplaceRange(id, msg)
     case "app_info": handleAppInfo(id, msg)
     case "activate": handleActivate(id, msg)
+    case "copy": handleCopy(id, msg)
     case let c where c.hasPrefix("keychain_"): handleKeychain(id, c, msg)
     default: reply(id, false, ["error": "unknown_command"])
     }

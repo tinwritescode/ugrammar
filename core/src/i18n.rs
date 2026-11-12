@@ -33,6 +33,8 @@ pub struct Strings {
     pub focus_changed: &'static str,
     /// {code}
     pub write_failed: &'static str,
+    /// Appended to the write error once the fix was copied.
+    pub fix_on_clipboard: &'static str,
     pub grant_ax: &'static str,
     pub needs_ax: &'static str,
     pub too_short: &'static str,
@@ -90,6 +92,7 @@ const EN: Strings = Strings {
     read_failed: "Could not read the selection ({code}).",
     focus_changed: "Focus changed; text not replaced.",
     write_failed: "Could not replace text ({code}).",
+    fix_on_clipboard: "The fix is on your clipboard: paste it with ⌘V.",
     grant_ax: "Grant Accessibility permission",
     needs_ax: "ugrammar needs Accessibility permission (System Settings → Privacy & Security → Accessibility).",
     too_short: "Too short to check (under 3 words).",
@@ -138,6 +141,7 @@ const VI: Strings = Strings {
     read_failed: "Không đọc được đoạn đã chọn ({code}).",
     focus_changed: "Đã chuyển sang ô khác, chữ chưa được thay.",
     write_failed: "Không thay được chữ ({code}).",
+    fix_on_clipboard: "Bản sửa đã nằm trong clipboard: dán bằng ⌘V.",
     grant_ax: "Cần cấp quyền Accessibility",
     needs_ax: "ugrammar cần quyền Accessibility (Cài đặt hệ thống → Quyền riêng tư & Bảo mật → Trợ năng).",
     too_short: "Quá ngắn để kiểm tra (dưới 3 từ).",
