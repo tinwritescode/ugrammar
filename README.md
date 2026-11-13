@@ -13,7 +13,7 @@ Select text, press <kbd>⌥</kbd><kbd>⌘</kbd><kbd>G</kbd>, review the diff, ap
 
 [**Download for macOS**](https://github.com/tinwritescode/ugrammar/releases/latest/download/ugrammar-macos-arm64.zip) · [Features](#features) · [Install](#install) · [Build from source](#build-from-source)
 
-<img src="marketing/auto-check-pause.png" width="620" alt="ugrammar checks a sentence typed without a period once typing pauses, and shows each fix with its reason">
+<img src="marketing/readme-hero.png" width="100%" alt="ugrammar checks a sentence typed without a period once typing pauses, and shows each fix with its reason">
 
 </div>
 

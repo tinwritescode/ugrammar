@@ -1,0 +1,114 @@
+<!doctype html>
+<!-- README hero mock. Static markup styled by the app's own theme.css/popover.css; no app code runs.
+     Render: marketing/hero/render.sh -->
+<html lang="en"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../../src/renderer/theme.css">
+<link rel="stylesheet" href="../../src/renderer/popover.css">
+<style>
+  * { animation: none !important; }
+  html, body { width: 1600px; height: 880px; overflow: hidden; }
+  .stage {
+    position: relative; width: 1600px; height: 880px; overflow: hidden; background: #15121f;
+    background-image:
+      radial-gradient(900px 600px at 78% 18%, rgba(124, 99, 230, .55), transparent 60%),
+      radial-gradient(700px 500px at 8% 92%, rgba(244, 221, 90, .16), transparent 60%),
+      radial-gradient(600px 500px at 30% 10%, rgba(242, 169, 196, .14), transparent 60%);
+  }
+  .stage::after { /* faint dot grid */
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background-image: radial-gradient(rgba(255,255,255,.07) 1px, transparent 1px); background-size: 28px 28px;
+    mask-image: linear-gradient(to bottom, #000, transparent 85%);
+  }
+
+  /* ---------- left copy ---------- */
+  .copy { position: absolute; left: 96px; top: 128px; width: 560px; z-index: 2; }
+  .badge { display: inline-flex; align-items: center; gap: 10px; padding: 6px 16px 6px 8px; border-radius: 999px;
+    background: rgba(255,255,255,.07); border: 1.5px solid rgba(255,255,255,.12); font: 18px var(--font-hand); color: var(--fg-2); }
+  .badge img { width: 30px; height: 30px; border-radius: 8px; }
+  h1 { margin: 30px 0 0; font: 96px/1.02 var(--font-hand); font-weight: 400; color: var(--fg); letter-spacing: -.01em; }
+  h1 em { font-style: normal; color: var(--yellow); position: relative; }
+  h1 em::after { content: ""; position: absolute; left: 2px; right: 6px; bottom: 6px; height: 12px; border-radius: 6px;
+    background: rgba(244,221,90,.22); z-index: -1; }
+  .lede { margin: 26px 0 0; font: 23px/1.5 var(--font-body); color: var(--fg-2); }
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 34px; }
+  .chip { display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 14px;
+    background: var(--group); border: 1.5px solid var(--group-border); font: 17px var(--font-hand); color: var(--fg-2); }
+  .chip kbd { height: 24px; min-width: 24px; font-size: 14px; }
+  .chip .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 4px var(--success-bg); }
+
+  /* ---------- compose window (a generic macOS mail window) ---------- */
+  .win { position: absolute; left: 720px; top: 104px; width: 800px; height: 540px; border-radius: 16px; overflow: hidden;
+    background: #fbfaff; color: #22185a; font-family: -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif;
+    box-shadow: 0 40px 80px -20px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.08); transform: rotate(-1.2deg); }
+  .titlebar { height: 52px; display: flex; align-items: center; gap: 8px; padding: 0 18px; background: #f1eefb; border-bottom: 1px solid #e2ddf7; }
+  .light { width: 13px; height: 13px; border-radius: 50%; }
+  .titlebar .t { flex: 1; text-align: center; font-size: 14px; font-weight: 600; color: #4a4370; margin-right: 60px; }
+  .field { display: flex; gap: 10px; padding: 13px 26px; border-bottom: 1px solid #ebe7f9; font-size: 15px; }
+  .field b { width: 64px; color: #8a84a8; font-weight: 500; }
+  .body { padding: 26px 26px; font-size: 19px; line-height: 1.7; color: #22185a; }
+  .caret { display: inline-block; width: 2px; height: 1.15em; background: #3b6cf6; vertical-align: -3px; margin-left: 1px; }
+
+  /* ---------- the popover: the app's own #card styles ---------- */
+  .pop { position: absolute; left: 820px; top: 404px; width: 540px; z-index: 3; filter: drop-shadow(0 30px 50px rgba(0,0,0,.55)); }
+  .pop #card { -webkit-app-region: none; }
+  .pop .text { font-size: 17px; }
+  .pop .notes { font-size: 13.5px; }
+
+  /* ---------- hand-written callout ---------- */
+  .callout { position: absolute; left: 1318px; top: 212px; z-index: 4; padding: 10px 16px; border-radius: 14px;
+    background: #22185a; color: var(--yellow); font: 21px/1.2 var(--font-hand); transform: rotate(5deg);
+    box-shadow: 0 12px 28px rgba(34,24,90,.35); }
+  .arrow { position: absolute; left: 1268px; top: 262px; z-index: 4; width: 70px; height: 86px; }
+  .arrow path { fill: none; stroke: #22185a; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
+</style></head>
+<body><div class="stage">
+
+  <div class="copy">
+    <span class="badge"><img src="../../src-tauri/icons/icon.png" alt="">ugrammar for macOS</span>
+    <h1>Type.<br>Pause.<br><em>Fixed.</em></h1>
+    <p class="lede">Grammar fixes in every text field on your Mac. No period, no hotkey: stop typing for a second and the owl checks your sentence.</p>
+    <div class="chips">
+      <span class="chip"><kbd>⌥⌘G</kbd> fix a selection</span>
+      <span class="chip"><kbd>⌥⌘T</kbd> rewrite the tone</span>
+      <span class="chip"><span class="dot"></span>explains every fix</span>
+    </div>
+  </div>
+
+  <div class="win">
+    <div class="titlebar">
+      <span class="light" style="background:#ff5f57"></span><span class="light" style="background:#febc2e"></span><span class="light" style="background:#28c840"></span>
+      <span class="t">Q3 report</span>
+    </div>
+    <div class="field"><b>To:</b> team@northwind.co</div>
+    <div class="field"><b>Subject:</b> Q3 report</div>
+    <div class="body">Hi team,<br><br>I has attached the report so please to review it before monday<span class="caret"></span></div>
+  </div>
+
+  <svg class="arrow" viewBox="0 0 70 86"><path d="M58 8 C 30 14, 14 40, 12 74"/><path d="M3 62 L 12 76 L 22 63"/></svg>
+  <div class="callout">no period,<br>just a 1-second pause</div>
+
+  <div class="pop"><div id="card">
+    <div class="meta">
+      <span class="mascot m-pen" aria-hidden="true"><svg viewBox="0 0 120 120" width="54" height="54">
+        <path class="m-body" d="M30 34 34 8 54 26Z M90 34 86 8 66 26Z"/>
+        <rect class="m-body" x="24" y="18" width="72" height="92" rx="36"/><ellipse class="m-belly" cx="60" cy="84" rx="25" ry="22"/>
+        <g><circle class="m-eye" cx="45" cy="48" r="15"/><circle class="m-eye" cx="75" cy="48" r="15"/>
+          <circle class="m-pupil" cx="49" cy="52" r="7"/><circle class="m-pupil" cx="79" cy="52" r="7"/></g>
+        <path class="m-beak" d="M54 62h12l-6 9Z"/>
+        <g><rect class="m-shell" x="84" y="56" width="10" height="44" rx="3" transform="rotate(28 89 78)"/><path class="m-body" d="m96 98 6 12-12-6Z"/></g>
+      </svg></span>
+      <div class="who"><strong>Owl fixed 3 spots</strong><span>In Mail</span></div>
+    </div>
+    <div class="text">I <span class="fix"><del>has</del><ins>have</ins></span> attached the report so please <span class="fix"><del>to </del></span>review it before <span class="fix"><del>monday</del><ins>Monday</ins></span></div>
+    <ul class="notes">
+      <li><span class="pair"><span class="kind grammar">Grammar</span><del>has</del>→<ins>have</ins></span><span>“I” takes “have”.</span></li>
+      <li><span class="pair"><span class="kind grammar">Grammar</span><del>please to review</del>→<ins>please review</ins></span><span>No “to” after “please”.</span></li>
+      <li><span class="pair"><span class="kind spelling">Spelling</span><del>monday</del>→<ins>Monday</ins></span><span>Days of the week are capitalized.</span></li>
+    </ul>
+    <div class="bar">
+      <span class="hint"><kbd>⌘↩</kbd><span>apply</span></span>
+      <button>Dismiss</button><button class="primary">Apply</button>
+    </div>
+  </div></div>
+
+</div></body></html>
