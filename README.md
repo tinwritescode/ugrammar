@@ -1,6 +1,8 @@
 # ugrammar
 
-Menu-bar grammar fixer for macOS. Select text anywhere, press ⌥⌘G, review the diff, Accept. With auto-check on, it also checks each sentence as you finish typing it.
+Menu-bar grammar fixer for macOS. Select text anywhere, press ⌥⌘G, review the diff, Accept. With auto-check on, it also checks each sentence as you finish typing it, or once you pause for a second, period or not.
+
+![Auto-check: a sentence with no period is checked once typing pauses](marketing/auto-check-pause.png)
 
 - `bun install && bun run dev` builds the Swift helper (`helper/`), bundles the web UI, and launches the Tauri app.
 - `bun run test` runs the Rust tests (`core/` and `src-tauri/`). `bun run typecheck` checks the UI.
