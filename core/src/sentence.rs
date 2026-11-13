@@ -13,8 +13,10 @@ pub const DEFAULT_MIN_WORDS: usize = 3;
 
 const NEWLINE: u16 = b'\n' as u16;
 
+pub const TERMINATORS: [char; 3] = ['.', '?', '!'];
+
 fn is_terminator(u: u16) -> bool {
-    matches!(u, 0x21 | 0x2E | 0x3F) // ! . ?
+    char::from_u32(u as u32).is_some_and(|c| TERMINATORS.contains(&c))
 }
 
 /// `s.trim().split(/\s+/).length`
@@ -26,6 +28,16 @@ fn word_count(s: &[u16]) -> usize {
 
 /// Indices are UTF-16 units, matching Accessibility ranges.
 pub fn sentence_ending_at(text: &[u16], caret: usize, min_words: usize) -> Option<SentenceRange> {
+    sentence_before(text, caret, min_words, true)
+}
+
+/// The sentence the caret ends, finished or still being written; an unfinished one only when
+/// nothing but whitespace follows the caret on its line (no word in progress, not editing mid-line).
+pub fn sentence_at_caret(text: &[u16], caret: usize, min_words: usize) -> Option<SentenceRange> {
+    sentence_before(text, caret, min_words, false)
+}
+
+fn sentence_before(text: &[u16], caret: usize, min_words: usize, finished_only: bool) -> Option<SentenceRange> {
     if caret == 0 || caret > text.len() {
         return None;
     }
@@ -36,8 +48,14 @@ pub fn sentence_ending_at(text: &[u16], caret: usize, min_words: usize) -> Optio
         saw_newline |= text[i - 1] == NEWLINE;
         i -= 1;
     }
-    if i == 0 || (!is_terminator(text[i - 1]) && !saw_newline) {
+    if i == 0 {
         return None;
+    }
+    if !is_terminator(text[i - 1]) && !saw_newline {
+        let line_rest_blank = text[caret..].iter().take_while(|&&u| u != NEWLINE).all(|&u| is_js_space(u));
+        if finished_only || !line_rest_blank {
+            return None;
+        }
     }
     let end = i;
     // Walk back to the previous terminator followed by whitespace (or text start / newline).
@@ -94,6 +112,29 @@ mod tests {
     fn caret_out_of_range() {
         assert_eq!(at("I has a cat.", 0), None);
         assert_eq!(at("I has a cat.", 13), None);
+    }
+
+    fn open(t: &str, caret: usize) -> Option<String> {
+        sentence_at_caret(&to_u16(t), caret, DEFAULT_MIN_WORDS).map(|r| r.text)
+    }
+
+    #[test]
+    fn at_caret_takes_an_unfinished_sentence() {
+        assert_eq!(open("Hello there. She dont like it", 29).as_deref(), Some("She dont like it"));
+        assert_eq!(open("She dont like it ", 17).as_deref(), Some("She dont like it"));
+        assert_eq!(open("She dont like\n\nBest, Tin", 13).as_deref(), Some("She dont like"), "text on later lines");
+    }
+
+    #[test]
+    fn at_caret_skips_unfinished_text_with_words_after_the_caret() {
+        assert_eq!(open("She dont like it", 10), None, "caret mid-word");
+        assert_eq!(open("She dont like it", 8), None, "caret mid-line");
+        assert_eq!(open("Hi there", 8), None, "too short");
+    }
+
+    #[test]
+    fn at_caret_still_takes_finished_sentences() {
+        assert_eq!(open("I has a cat. Then", 12).as_deref(), Some("I has a cat."));
     }
 
     #[test]

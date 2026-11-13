@@ -1,13 +1,15 @@
 use indexmap::IndexMap;
 use std::collections::{HashMap, HashSet, VecDeque};
 pub use crate::helper_client::Snapshot;
-use ugrammar_core::sentence::{sentence_ending_at, SentenceRange, DEFAULT_MIN_WORDS};
+use ugrammar_core::sentence::{sentence_at_caret, sentence_ending_at, SentenceRange, DEFAULT_MIN_WORDS, TERMINATORS};
 use ugrammar_core::text::{to_u16, utf16_len as len16};
 
 pub const POLL_MS: u64 = 250;
 const STABLE_MS: u64 = 500;
 /// A typed . ? ! is a clear "sentence done" signal: wait only long enough to skip "..." / "?!" mid-burst.
 const PUNCT_STABLE_MS: u64 = 200;
+/// No . ? ! or newline yet: a pause this long means the user stopped to read, so check what is there.
+const OPEN_STABLE_MS: u64 = 1000;
 const MAX_CACHE: usize = 200;
 /// Results are reused across apps and fields for this long; kept in RAM only.
 const CACHE_TTL_MS: u64 = 10 * 60_000;
@@ -77,9 +79,12 @@ struct Entry {
     at: u64,
 }
 
-/// Cache key: trimmed, inner whitespace collapsed, case kept.
+/// Cache key: trimmed, inner whitespace collapsed, case kept, end punctuation dropped so a sentence checked
+/// during a pause is not checked again once its period is typed.
+// shortcut: "Do you like it" checked clean also clears "Do you like it." (should be "?"); key on the
+// terminator too if missed end-punctuation fixes get reported.
 fn norm(s: &str) -> String {
-    s.split_whitespace().collect::<Vec<_>>().join(" ")
+    s.split_whitespace().collect::<Vec<_>>().join(" ").trim_end_matches(TERMINATORS).to_string()
 }
 
 fn find_from(hay: &[u16], needle: &[u16], from: usize) -> Option<usize> {
@@ -106,7 +111,7 @@ pub fn locate(text: &[u16], start: usize, s: &str) -> Option<usize> {
     best.filter(|b| b.abs_diff(start) <= 200)
 }
 
-/// Watches the focused field; when a sentence ends and the text settles, checks only that sentence.
+/// Watches the focused field; when a sentence ends (or the user pauses mid-sentence) and the text settles, checks only that sentence.
 /// Pure state: the driver feeds snapshots and engine results in and carries the effects out.
 #[derive(Default)]
 pub struct AutoChecker {
@@ -271,8 +276,10 @@ impl AutoChecker {
         if snap.sel_len.unwrap_or(0) > 0 {
             return out;
         }
-        let punct = sent.as_ref().is_some_and(|s| s.text.ends_with(['.', '?', '!']));
-        if now.saturating_sub(self.changed_at) >= if punct { PUNCT_STABLE_MS } else { STABLE_MS } {
+        let idle = now.saturating_sub(self.changed_at);
+        let sent = sent.or_else(|| (idle >= OPEN_STABLE_MS).then(|| sentence_at_caret(&text, caret, DEFAULT_MIN_WORDS)).flatten());
+        let punct = sent.as_ref().is_some_and(|s| s.text.ends_with(TERMINATORS));
+        if idle >= if punct { PUNCT_STABLE_MS } else { STABLE_MS } {
             match sent {
                 Some(s) => self.consider(s, true, &mut out),
                 None if text != self.logged_text => {
@@ -294,7 +301,9 @@ impl AutoChecker {
         let Some(f) = self.showing.as_ref().filter(|f| f.field == self.field) else { return };
         let Some(start) = locate(text, f.start, &f.sentence) else { return };
         let end = start + len16(&f.sentence);
-        if caret > end && text[end..caret].iter().any(|&u| !char::from_u32(u as u32).is_some_and(char::is_whitespace)) {
+        // Finishing the sentence with . ? ! is not moving on.
+        let moved_on = |&u: &u16| !char::from_u32(u as u32).is_some_and(|c| c.is_whitespace() || TERMINATORS.contains(&c));
+        if caret > end && text[end..caret].iter().any(moved_on) {
             let f = self.showing.take().unwrap();
             out.push(Effect::Hide(f.id));
             self.push_inbox(f);
@@ -363,7 +372,7 @@ impl AutoChecker {
             let Some(s) = self.queue.pop_front() else { return };
             let Some(offset) = locate(&self.last_text, s.start, &s.text) else { continue };
             out.push(Effect::Log(format!("check start app={:?} len={}", self.app_name, s.end - s.start)));
-            let at_caret = sentence_ending_at(&self.last_text, self.caret, DEFAULT_MIN_WORDS).is_some_and(|c| c.start == offset && c.text == s.text);
+            let at_caret = sentence_at_caret(&self.last_text, self.caret, DEFAULT_MIN_WORDS).is_some_and(|c| c.start == offset && c.text == s.text);
             self.inflight = Some(norm(&s.text));
             out.push(Effect::Check(Job {
                 offset,
@@ -387,7 +396,11 @@ impl AutoChecker {
                 out.push(Effect::Log(format!("check error {e}")));
                 self.failed.insert(norm(&job.sentence), now);
             }
-            Ok((corrected, notes)) => {
+            Ok((mut corrected, notes)) => {
+                // The user is still writing it: the period the model adds is not a fix.
+                if !job.sentence.ends_with(TERMINATORS) {
+                    corrected.truncate(corrected.trim_end_matches(TERMINATORS).len());
+                }
                 let changed = corrected != job.sentence;
                 out.push(Effect::Log(format!("check done changed={changed} stale={}", job.field != self.field)));
                 let fix = changed.then(|| (corrected.clone(), notes.clone()));
@@ -414,8 +427,10 @@ mod tests {
     const FIXED: &str = "She doesn't like it.";
     const MIN: u64 = 60_000;
 
+    /// Like the model: also ends an unfinished sentence with a period.
     fn fix(s: &str) -> String {
-        s.replace("dont", "doesn't")
+        let s = s.replace("dont", "doesn't");
+        if s.ends_with(TERMINATORS) { s } else { format!("{s}.") }
     }
 
     #[test]
@@ -523,6 +538,31 @@ mod tests {
         r.step(250);
         r.step(250);
         assert_eq!(r.calls.len(), 1);
+    }
+
+    #[test]
+    fn a_pause_checks_a_sentence_without_its_period() {
+        let open = "She dont like it";
+        let mut r = rig(true);
+        r.snap = snap(open);
+        r.steps(2);
+        assert!(r.calls.is_empty(), "a short pause is not enough without a period");
+        r.steps(1);
+        assert_eq!(r.calls, [open]);
+        let got: Vec<_> = r.shown.iter().map(|f| (f.sentence.as_str(), f.corrected.as_str())).collect();
+        assert_eq!(got, [(open, "She doesn't like it")], "the model's added period is not a fix");
+    }
+
+    #[test]
+    fn typing_the_period_after_a_paused_check_neither_rechecks_nor_hides() {
+        let mut r = rig(true);
+        r.snap = snap("She dont like it");
+        r.steps(3);
+        r.type_(S);
+        r.steps(3);
+        assert_eq!(r.calls.len(), 1);
+        assert_eq!(r.shown.len(), 1);
+        assert!(r.hidden.is_empty());
     }
 
     #[test]
