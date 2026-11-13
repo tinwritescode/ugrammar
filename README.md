@@ -19,17 +19,15 @@ Select text, press <kbd>⌥</kbd><kbd>⌘</kbd><kbd>G</kbd>, review the diff, ap
 
 ## Features
 
-| | |
-|---|---|
-| ✍️ **Works everywhere** | A menu-bar app that reads and writes text through Accessibility: Notes, Mail, Slack, Chrome, TextEdit and most other apps. |
-| ⚡ **Check as you type** | Each sentence is checked when you finish it, or after a one-second pause, period or not. Fixes you skip wait in the menu bar for later. |
-| 🔍 **Review every fix** | A word-level diff shows what changes. Keep or skip each fix, then apply with <kbd>⌘</kbd><kbd>↩</kbd>. |
-| 💡 **Learn from it** | Each fix is tagged grammar, spelling, punctuation, word or style, with a short reason in your language. |
-| 🎭 **Rewrite the tone** | <kbd>⌥</kbd><kbd>⌘</kbd><kbd>T</kbd> rewrites a selection as Natural, Formal, Friendly or Short, translates it, or tells you how it reads to the person receiving it. |
-| 🗂️ **Per-app style** | Friendly in Slack, formal in Mail: each app can have its own writing style. |
-| 📖 **Your words stay** | Names and jargon in your dictionary are never changed. |
-| 📊 **Weekly stats** | Words checked, fixes applied and your most common mistakes, stored only on this Mac. |
-| 🔄 **Auto-update** | New versions install themselves from GitHub Releases. |
+- ✍️ **Works everywhere** — A menu-bar app that reads and writes text through Accessibility: Notes, Mail, Slack, Chrome, TextEdit and most other apps.
+- ⚡ **Check as you type** — Each sentence is checked when you finish it, or after a one-second pause, period or not. Fixes you skip wait in the menu bar for later.
+- 🔍 **Review every fix** — A word-level diff shows what changes. Keep or skip each fix, then apply with <kbd>⌘</kbd><kbd>↩</kbd>.
+- 💡 **Learn from it** — Each fix is tagged grammar, spelling, punctuation, word or style, with a short reason in your language.
+- 🎭 **Rewrite the tone** — <kbd>⌥</kbd><kbd>⌘</kbd><kbd>T</kbd> rewrites a selection as Natural, Formal, Friendly or Short, translates it, or tells you how it reads to the person receiving it.
+- 🗂️ **Per-app style** — Friendly in Slack, formal in Mail: each app can have its own writing style.
+- 📖 **Your words stay** — Names and jargon in your dictionary are never changed.
+- 📊 **Weekly stats** — Words checked, fixes applied and your most common mistakes, stored only on this Mac.
+- 🔄 **Auto-update** — New versions install themselves from GitHub Releases.
 
 ### Shortcuts
 
