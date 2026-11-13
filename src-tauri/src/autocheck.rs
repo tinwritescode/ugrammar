@@ -42,6 +42,8 @@ pub struct Job {
     pub sentence: String,
     field: String,
     pid: Option<i64>,
+    /// Picks the app's own writing style.
+    pub bundle_id: Option<String>,
     app_name: Option<String>,
     /// Field text when the sentence was sent, if the caret sat at its end.
     before: Option<Vec<u16>>,
@@ -59,9 +61,10 @@ pub enum Effect {
 }
 
 /// How a shown or listed fix was settled.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Outcome {
-    Applied,
+    /// Holds the text written over the sentence.
+    Applied(String),
     Dismissed,
     /// Closed without a decision: it waits in the inbox.
     Later,
@@ -110,6 +113,7 @@ pub struct AutoChecker {
     next_id: u64,
     field: String,
     pid: Option<i64>,
+    bundle_id: Option<String>,
     app_name: Option<String>,
     last_text: Vec<u16>,
     caret: usize,
@@ -180,7 +184,7 @@ impl AutoChecker {
         let Some(f) = f else { return };
         match outcome {
             // The accepted text must not be sent back for another pass.
-            Outcome::Applied => self.cache_put(Entry { sentence: f.corrected, fix: None, at: now }),
+            Outcome::Applied(written) => self.cache_put(Entry { sentence: written, fix: None, at: now }),
             Outcome::Dismissed => {
                 self.dismissed.insert(norm(&f.sentence));
             }
@@ -199,6 +203,8 @@ impl AutoChecker {
         }
     }
 
+    // shortcut: keyed by sentence only, so within the TTL the same sentence in an app with another style reuses this
+    // answer; key by style too if per-app styles see real use.
     fn cache_put(&mut self, e: Entry) {
         self.cache.insert(norm(&e.sentence), e);
         if self.cache.len() > MAX_CACHE {
@@ -230,6 +236,7 @@ impl AutoChecker {
         let caret = snap.caret.unwrap_or(0);
         let field = format!("{:?}:{:?}", snap.pid, snap.bundle_id);
         self.pid = snap.pid;
+        self.bundle_id = snap.bundle_id.clone();
         self.app_name = snap.app_name.clone();
         if field != self.field {
             self.leave_field();
@@ -363,6 +370,7 @@ impl AutoChecker {
                 sentence: s.text,
                 field: self.field.clone(),
                 pid: self.pid,
+                bundle_id: self.bundle_id.clone(),
                 app_name: self.app_name.clone(),
                 before: at_caret.then(|| self.last_text.clone()),
             }));
@@ -578,7 +586,7 @@ mod tests {
     fn cache_expires_after_ten_minutes() {
         let mut r = rig(true);
         r.steps(3);
-        r.auto.resolve(r.last(), Outcome::Applied, r.clock);
+        r.auto.resolve(r.last(), Outcome::Applied(FIXED.into()), r.clock);
         r.type_("");
         r.step(11 * MIN);
         r.type_(S);
@@ -605,7 +613,7 @@ mod tests {
     fn clear_cache_checks_again() {
         let mut r = rig(true);
         r.steps(3);
-        r.auto.resolve(r.last(), Outcome::Applied, r.clock);
+        r.auto.resolve(r.last(), Outcome::Applied(FIXED.into()), r.clock);
         r.auto.clear_cache();
         r.type_("");
         r.type_(S);
@@ -630,7 +638,7 @@ mod tests {
     fn accepted_sentence_is_not_checked_again() {
         let mut r = rig(true);
         r.steps(3);
-        r.auto.resolve(r.last(), Outcome::Applied, r.clock);
+        r.auto.resolve(r.last(), Outcome::Applied(FIXED.into()), r.clock);
         r.snap = snap(FIXED);
         r.steps(3);
         assert_eq!(r.calls.len(), 1);
@@ -735,7 +743,7 @@ mod tests {
         r.steps(3);
         let id = r.last();
         r.auto.resolve(id, Outcome::Later, r.clock);
-        r.auto.resolve(id, Outcome::Applied, r.clock);
+        r.auto.resolve(id, Outcome::Applied(FIXED.into()), r.clock);
         assert!(r.auto.inbox().is_empty());
     }
 }

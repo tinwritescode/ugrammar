@@ -29,6 +29,10 @@ quickFix: boolean,
  */
 style: Tone | null, 
 /**
+ * Bundle id -> that app's own style, used instead of `style`; None there only fixes errors.
+ */
+appStyles: { [key in string]: Tone | null }, 
+/**
  * Language of the per-fix reasons.
  */
 explainLang: string, firstRunAcknowledged: boolean, provider: Provider, 

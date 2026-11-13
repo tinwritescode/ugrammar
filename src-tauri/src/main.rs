@@ -48,6 +48,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::popover_action,
             commands::pending_action,
+            commands::popover_skip,
+            commands::add_word,
             commands::popover_resize,
             commands::popover_current,
             commands::check_update_now,

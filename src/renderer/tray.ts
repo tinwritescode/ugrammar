@@ -38,6 +38,12 @@ const isLang = (v: string): v is Lang => Object.hasOwn(LANGS, v);
 const styleSel = $<HTMLSelectElement>("style");
 const TONES: Record<Tone, true> = { natural: true, formal: true, friendly: true, short: true, translate: true };
 const isTone = (v: string | undefined): v is Tone => v !== undefined && Object.hasOwn(TONES, v);
+/** "off" stands for null: only fix errors. */
+const styleOptions = () => {
+  const h = t.html;
+  return [["off", h.styleOff], ["natural", h.natural], ["formal", h.formal], ["friendly", h.friendly], ["short", h.short]].map(([v, label]) => new Option(label, v));
+};
+const styleValue = (v: string) => (isTone(v) ? v : null);
 
 /** Re-labels the page when the picked language changes; the explain-language options are rebuilt in it. */
 function setLanguage(lang: Lang | null) {
@@ -46,8 +52,7 @@ function setLanguage(lang: Lang | null) {
   t = dict(lang);
   translatePage(lang ?? "en", t);
   langSel.replaceChildren(...Object.entries(t.explainLangs).map(([v, label]) => new Option(label, v)));
-  const h = t.html;
-  styleSel.replaceChildren(...[["off", h.styleOff], ["natural", h.natural], ["formal", h.formal], ["friendly", h.friendly], ["short", h.short]].map(([v, label]) => new Option(label, v)));
+  styleSel.replaceChildren(...styleOptions());
   if (state) styleSel.value = state.settings.style ?? "off";
   $("title").textContent = panel.dataset.view === "setup" ? t.html.settings : panel.dataset.view === "permissions" ? t.html.permissions : "ugrammar";
 }
@@ -65,6 +70,7 @@ const svg = (paths: string) => {
 };
 const X_ICON = '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>';
 const MINUS_ICON = '<circle cx="12" cy="12" r="9"/><path d="M8 12h8"/>';
+const UPDOWN_ICON = '<path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>';
 
 function host(endpoint: string) {
   try { return new URL(endpoint).host; } catch { return endpoint; }
@@ -113,26 +119,57 @@ function appIcon(info: AppInfo | undefined, id: string) {
   return el("span", { className: "icon initial", ariaHidden: "true" }, (info?.name ?? id.split(".").pop() ?? "?").charAt(0).toUpperCase());
 }
 
-function renderApps(ids: string[]) {
+/** Fetches names and icons not asked for yet, then redraws both app lists. */
+function askAppInfo(ids: string[]) {
   const missing = ids.filter((id) => !appInfoAsked.has(id));
-  if (missing.length) {
-    for (const id of missing) appInfoAsked.add(id);
-    void proofy.appInfo(missing).then((infos) => {
-      for (const i of infos) appInfo.set(i.id, i);
-      if (state) renderApps(state.settings.excludedApps);
-    });
-  }
+  if (!missing.length) return;
+  for (const id of missing) appInfoAsked.add(id);
+  void proofy.appInfo(missing).then((infos) => {
+    for (const i of infos) appInfo.set(i.id, i);
+    if (!state) return;
+    renderApps(state.settings.excludedApps);
+    renderAppStyles(state.settings.appStyles);
+  });
+}
+
+/** One app row: icon, name over bundle id, then `extra` (controls) and a remove button. */
+function appRow(id: string, onRemove: () => void, ...extra: Node[]) {
+  const info = appInfo.get(id);
+  const name = el("span", { className: "name grow" }, el("span", {}, info?.name ?? id));
+  if (info?.name) name.append(el("span", {}, id));
+  const remove = el("button", { title: t.removeApp, ariaLabel: t.removeAppLabel(info?.name ?? id), onclick: onRemove }, svg(MINUS_ICON));
+  return el("li", { title: id }, appIcon(info, id), name, ...extra, remove);
+}
+
+function renderApps(ids: string[]) {
+  askAppInfo(ids);
   const shown = showAllApps ? ids : ids.slice(0, APPS_COLLAPSED);
-  $("apps").replaceChildren(...shown.map((id) => {
-    const info = appInfo.get(id);
-    const name = el("span", { className: "name grow" }, el("span", {}, info?.name ?? id));
-    if (info?.name) name.append(el("span", {}, id));
-    const remove = el("button", { title: t.removeApp, ariaLabel: t.removeAppLabel(info?.name ?? id), onclick: () => state && save({ excludedApps: state.settings.excludedApps.filter((x) => x !== id) }) }, svg(MINUS_ICON));
-    return el("li", { title: id }, appIcon(info, id), name, remove);
-  }));
+  $("apps").replaceChildren(...shown.map((id) => appRow(id, () => state && save({ excludedApps: state.settings.excludedApps.filter((x) => x !== id) }))));
   const more = $("moreApps");
   more.hidden = ids.length <= APPS_COLLAPSED;
   more.textContent = showAllApps ? t.showLess : t.showMore(ids.length - APPS_COLLAPSED);
+}
+
+/** Apps with their own writing style, each with a style picker. */
+function renderAppStyles(styles: Settings["appStyles"]) {
+  const ids = Object.keys(styles);
+  askAppInfo(ids);
+  const set = (id: string, style: Tone | null | undefined) => {
+    const next: Record<string, Tone | null> = { ...styles };
+    if (style === undefined) delete next[id];
+    else next[id] = style;
+    save({ appStyles: next });
+  };
+  $("appStyles").replaceChildren(...ids.map((id) => {
+    const sel = document.createElement("select");
+    sel.append(...styleOptions());
+    sel.value = styles[id] ?? "off";
+    sel.onchange = () => set(id, styleValue(sel.value));
+    const picker = document.createElement("span");
+    picker.className = "popup";
+    picker.append(sel, svg(UPDOWN_ICON));
+    return appRow(id, () => set(id, undefined), picker);
+  }));
 }
 
 $("moreApps").onclick = () => {
@@ -162,7 +199,7 @@ function renderPending(items: PendingFix[]) {
     const li = el("li", { className: expanded ? "open" : "" }, head);
     if (expanded) {
       li.append(el("div", { className: "text" }, ...diffNodes(f.ops)));
-      if (f.notes.length) li.append(el("ul", { className: "notes" }, ...f.notes.map(note)));
+      if (f.notes.length) li.append(el("ul", { className: "notes" }, ...f.notes.map((n) => note(n, t.fixKinds))));
       li.append(el("div", { className: "bar" },
         el("button", { onclick: () => proofy.pendingAction(f.id, "dismiss") }, t.dismiss),
         el("button", { className: "primary", onclick: () => proofy.pendingAction(f.id, "accept") }, t.apply)));
@@ -297,6 +334,8 @@ function render(s: TrayState) {
   const mode = cfg.autoCheck ? "popup" : "off";
   for (const b of $("mode").querySelectorAll<HTMLButtonElement>("button")) b.classList.toggle("on", b.dataset.mode === mode);
   for (const c of document.querySelectorAll<HTMLInputElement>(".switch[data-key]")) c.checked = cfg[c.dataset.key as SwitchKey];
+  const w = s.week;
+  $("week").textContent = w.this.words || w.this.fixes || w.last.fixes ? t.week(w.this.words, w.this.fixes, w.last.fixes) : "";
   $("insights").replaceChildren(...(s.insights.length
     ? s.insights.map((i) => el("li", { title: i.note ?? "" },
         el("span", { className: "pair" }, el("del", {}, i.from || "∅"), el("span", { className: "arrow" }, " → "), el("ins", {}, i.to || "∅")),
@@ -319,6 +358,7 @@ function render(s: TrayState) {
   renderRecorder();
   renderTags("words", cfg.dictionary, (w) => save({ dictionary: cfg.dictionary.filter((x) => x !== w) }));
   renderApps(cfg.excludedApps);
+  renderAppStyles(cfg.appStyles);
   renderPermissions(s.permissions);
   resize();
 }
@@ -374,7 +414,7 @@ for (const c of document.querySelectorAll<HTMLInputElement>(".switch[data-key]")
 }
 
 langSel.onchange = () => save({ explainLang: langSel.value });
-styleSel.onchange = () => save({ style: isTone(styleSel.value) ? styleSel.value : null });
+styleSel.onchange = () => save({ style: styleValue(styleSel.value) });
 uiLangSel.onchange = () => isLang(uiLangSel.value) && save({ language: uiLangSel.value });
 providerSel.onchange = () => {
   showProviderFields();
@@ -426,6 +466,14 @@ function excludeApp(id: string | null) {
 }
 addOnEnter("newApp", excludeApp);
 $("pickApp").onclick = async () => excludeApp(await proofy.pickApp());
+// A new app starts on the saved style; its own picker changes it.
+$("pickStyleApp").onclick = async () => {
+  const id = await proofy.pickApp();
+  if (!id || !state || id in state.settings.appStyles) return;
+  const next: Record<string, Tone | null> = { ...state.settings.appStyles };
+  next[id] = state.settings.style;
+  save({ appStyles: next });
+};
 $("clearInsights").onclick = () => void proofy.clearInsights();
 
 proofy.onTray(render);

@@ -24,6 +24,17 @@ pub async fn pending_action(id: u64, action: Choice) {
     ctx().pending_action(id, action).await;
 }
 
+/// The diff's fixes the user turned off; Accept writes only the rest.
+#[tauri::command]
+pub async fn popover_skip(fixes: Vec<usize>) {
+    ctx().popover_skip(fixes);
+}
+
+#[tauri::command]
+pub async fn add_word(word: String) {
+    ctx().add_word(&word);
+}
+
 #[tauri::command]
 pub async fn popover_resize(height: f64, width: Option<f64>) {
     ctx().popover_resize(height, width);

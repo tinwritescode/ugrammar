@@ -9,7 +9,7 @@ use std::time::Duration;
 use serde_json::Value;
 use tokio::io::AsyncWriteExt;
 
-use crate::engine::{build_prompt, finish_check, CheckRequest, CheckResult, ConnectionStatus, EngineError, EngineErrorKind};
+use crate::engine::{build_prompt, finish_check, parse_reaction, reaction_prompt, CheckRequest, CheckResult, ConnectionStatus, EngineError, EngineErrorKind};
 
 /// The CLI starts a Node-free binary but still logs in and warms up, so it never gets less than this.
 pub const MIN_TIMEOUT_MS: u64 = 30_000;
@@ -142,6 +142,10 @@ impl<R: Runner> ClaudeCliEngine<R> {
     pub async fn check(&self, req: &CheckRequest) -> Result<CheckResult, EngineError> {
         let raw = self.ask(build_prompt(req)).await?;
         finish_check(req, &raw)
+    }
+
+    pub async fn react(&self, text: &str, lang: &str) -> Result<String, EngineError> {
+        parse_reaction(&self.ask(reaction_prompt(text, lang)).await?)
     }
 
     pub async fn test_connection(&self) -> ConnectionStatus {

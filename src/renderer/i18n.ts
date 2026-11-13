@@ -1,5 +1,8 @@
 import type { Lang, PermissionId, StatusKind, UpdateNote } from "../shared/ipc";
 
+/** The `[kind]` the engine tags each note's reason with (see `explain_prompt` in core). */
+export type FixKind = "grammar" | "spelling" | "punctuation" | "word" | "style";
+
 /** Words in the HTML: `data-i18n` sets text, `data-i18n-label` sets title and aria-label, `data-i18n-ph` sets placeholder. */
 const enHtml = {
   back: "Back",
@@ -52,6 +55,7 @@ const enHtml = {
   excluded: "Ignored apps",
   excludedAside: "Text is never read",
   pickApp: "Choose app…",
+  appStyleAdd: "+ Own style for an app…",
   quit: "Quit",
   permissions: "Permissions",
   permissionsAllSet: "All set — ugrammar has what it needs.",
@@ -77,6 +81,8 @@ const en = {
   times: (n: number) => `${n}×`,
   dismiss: "Dismiss",
   apply: "Apply",
+  close: "Close",
+  howItReads: "How it reads",
   checkUpdates: "Check for updates",
   updateButton: { checking: "Checking…", downloading: "Downloading…" } satisfies Partial<Record<UpdateNote, string>>,
   updateNote: {
@@ -89,6 +95,8 @@ const en = {
   autoUpdate: "Checks every 6 hours",
   recording: "Press a shortcut…",
   noInsights: "No repeated mistakes yet.",
+  week: (words: number, fixes: number, lastFixes: number) =>
+    `This week: ${plural(words, "word", "words")} checked, ${plural(fixes, "fix", "fixes")} applied (last week ${lastFixes}).`,
   installed: (v: string) => `Version ${v} is installed.`,
   keySaved: "Saved in Keychain",
   testing: "Testing…",
@@ -101,6 +109,10 @@ const en = {
   inApp: (name: string) => `In ${name}`,
   hintApply: "apply",
   hintDismiss: "dismiss",
+  skipFix: "Click to skip this fix",
+  keepFix: "Click to keep this fix",
+  alwaysKeep: "Always keep",
+  fixKinds: { grammar: "Grammar", spelling: "Spelling", punctuation: "Punctuation", word: "Word choice", style: "Style" } satisfies Record<FixKind, string>,
   checking: "Checking…",
   granted: "Granted",
   notGranted: "Not granted",
@@ -174,6 +186,7 @@ const vi: Dict = {
     excluded: "App bỏ qua",
     excludedAside: "Không bao giờ đọc chữ",
     pickApp: "Chọn app…",
+    appStyleAdd: "+ Văn phong riêng cho một app…",
     quit: "Thoát",
     permissions: "Quyền truy cập",
     permissionsAllSet: "Đã đủ quyền — ugrammar có mọi thứ cần thiết.",
@@ -193,6 +206,8 @@ const vi: Dict = {
   times: (n) => `${n} lần`,
   dismiss: "Bỏ qua",
   apply: "Áp dụng",
+  close: "Đóng",
+  howItReads: "Người đọc sẽ thấy",
   checkUpdates: "Kiểm tra cập nhật",
   updateButton: { checking: "Đang kiểm tra…", downloading: "Đang tải bản mới…" },
   updateNote: {
@@ -205,6 +220,7 @@ const vi: Dict = {
   autoUpdate: "Tự kiểm tra mỗi 6 giờ",
   recording: "Nhấn tổ hợp phím…",
   noInsights: "Chưa có lỗi lặp lại.",
+  week: (words, fixes, lastFixes) => `Tuần này: đã kiểm tra ${words} chữ, áp dụng ${fixes} chỗ sửa (tuần trước ${lastFixes}).`,
   installed: (v) => `Bản ${v} đã cài xong.`,
   keySaved: "Đã lưu trong Keychain",
   testing: "Đang thử…",
@@ -216,6 +232,10 @@ const vi: Dict = {
   inApp: (name) => `Trong ${name}`,
   hintApply: "áp dụng",
   hintDismiss: "bỏ qua",
+  skipFix: "Bấm để bỏ chỗ sửa này",
+  keepFix: "Bấm để giữ chỗ sửa này",
+  alwaysKeep: "Luôn giữ",
+  fixKinds: { grammar: "Ngữ pháp", spelling: "Chính tả", punctuation: "Dấu câu", word: "Từ ngữ", style: "Văn phong" },
   checking: "Đang kiểm tra…",
   granted: "Đã cấp",
   notGranted: "Chưa cấp",

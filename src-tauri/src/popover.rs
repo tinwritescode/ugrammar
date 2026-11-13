@@ -4,7 +4,9 @@
 use crate::ipc::{Choice, PopoverPayload};
 use crate::placement::Anchor;
 use crate::placement::Rect;
+use std::collections::BTreeSet;
 use tokio::sync::oneshot;
+use ugrammar_core::diff::apply_fixes;
 
 pub const POPOVER_W: f64 = 460.0;
 const MAX_H: f64 = 600.0;
@@ -15,14 +17,33 @@ const FIRST_H: f64 = 200.0;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Ticket(u64);
 
+/// What a diff popover's waiter gets back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Answer {
+    /// The text to write: the original with the fixes the user left on.
+    Accept(String),
+    Dismiss,
+    /// Closed without a decision (timed out, or another popover took its place).
+    Later,
+}
+
 /// What closing left to do: answer whoever waited on the closed popover.
 #[must_use]
-pub struct Closed(Option<oneshot::Sender<Choice>>);
+pub struct Closed {
+    waiter: Option<oneshot::Sender<Answer>>,
+    /// What Accept writes; None when no fix is left on.
+    accepted: Option<String>,
+}
 
 impl Closed {
     pub fn answer(self, choice: Choice) {
-        if let Some(tx) = self.0 {
-            let _ = tx.send(choice);
+        let answer = match (choice, self.accepted) {
+            (Choice::Accept, Some(text)) => Answer::Accept(text),
+            (Choice::Accept | Choice::Dismiss, _) => Answer::Dismiss,
+            (Choice::Later, _) => Answer::Later,
+        };
+        if let Some(tx) = self.waiter {
+            let _ = tx.send(answer);
         }
     }
 }
@@ -39,7 +60,9 @@ pub enum Expiry {
 #[derive(Default)]
 pub struct Session {
     generation: u64,
-    resolve: Option<oneshot::Sender<Choice>>,
+    resolve: Option<oneshot::Sender<Answer>>,
+    /// Fixes of the showing diff the user turned off, numbered as `apply_fixes` counts them.
+    skipped: BTreeSet<usize>,
     /// Fix id of the auto-check popup, from the claim until its answer is handled.
     auto: Option<u64>,
     payload: Option<PopoverPayload>,
@@ -52,13 +75,22 @@ pub struct Session {
 impl Session {
     pub fn close(&mut self) -> Closed {
         self.generation += 1;
-        self.payload = None;
-        Closed(self.resolve.take())
+        let skipped = std::mem::take(&mut self.skipped);
+        let accepted = self.payload.take().and_then(|p| {
+            let text = apply_fixes(p.ops.as_deref()?, &skipped);
+            (p.original.as_deref() != Some(text.as_str())).then_some(text)
+        });
+        Closed { waiter: self.resolve.take(), accepted }
+    }
+
+    /// The diff's fixes the user turned off; the page sends the whole list on every toggle.
+    pub fn set_skipped(&mut self, fixes: Vec<usize>) {
+        self.skipped = fixes.into_iter().collect();
     }
 
     /// Replaces whatever is open; the payload is measured at full width until the page says otherwise. `waiter` gets the
     /// user's choice, or Later when replaced or closed for them.
-    pub fn open(&mut self, payload: PopoverPayload, anchor: Anchor, waiter: Option<oneshot::Sender<Choice>>) -> (Ticket, Closed) {
+    pub fn open(&mut self, payload: PopoverPayload, anchor: Anchor, waiter: Option<oneshot::Sender<Answer>>) -> (Ticket, Closed) {
         let closed = self.close();
         self.resolve = waiter;
         self.payload = Some(payload);
@@ -137,7 +169,7 @@ mod tests {
 
     const AT: Anchor = Anchor::Corner { x: 0.0, y: 0.0 };
 
-    fn waiting(s: &mut Session) -> (Ticket, oneshot::Receiver<Choice>) {
+    fn waiting(s: &mut Session) -> (Ticket, oneshot::Receiver<Answer>) {
         let (tx, rx) = oneshot::channel();
         let (t, closed) = s.open(msg(), AT, Some(tx));
         closed.answer(Choice::Dismiss); // nothing was open: no one to answer
@@ -150,7 +182,7 @@ mod tests {
         let (_, mut rx) = waiting(&mut s);
         let (_, closed) = s.open(msg(), AT, None);
         closed.answer(Choice::Later);
-        assert_eq!(rx.try_recv(), Ok(Choice::Later));
+        assert_eq!(rx.try_recv(), Ok(Answer::Later));
     }
 
     #[test]
@@ -158,10 +190,44 @@ mod tests {
         let mut s = Session::default();
         let (t, mut rx) = waiting(&mut s);
         assert!(s.is_current(t));
-        s.close().answer(Choice::Accept);
-        assert_eq!(rx.try_recv(), Ok(Choice::Accept));
+        s.close().answer(Choice::Dismiss);
+        assert_eq!(rx.try_recv(), Ok(Answer::Dismiss));
         assert!(!s.is_current(t));
         assert_eq!(s.payload(), None);
+    }
+
+    fn diff_waiting(s: &mut Session) -> oneshot::Receiver<Answer> {
+        let (tx, rx) = oneshot::channel();
+        let _ = s.open(PopoverPayload::diff("I has a apple.", "I have an apple.", None, vec![]), AT, Some(tx));
+        rx
+    }
+
+    #[test]
+    fn accept_writes_only_the_fixes_left_on() {
+        let mut s = Session::default();
+        let mut rx = diff_waiting(&mut s);
+        s.set_skipped(vec![1]);
+        s.close().answer(Choice::Accept);
+        assert_eq!(rx.try_recv(), Ok(Answer::Accept("I have a apple.".into())));
+    }
+
+    #[test]
+    fn accept_with_every_fix_skipped_is_a_dismiss() {
+        let mut s = Session::default();
+        let mut rx = diff_waiting(&mut s);
+        s.set_skipped(vec![0, 1]);
+        s.close().answer(Choice::Accept);
+        assert_eq!(rx.try_recv(), Ok(Answer::Dismiss));
+    }
+
+    #[test]
+    fn a_new_popover_starts_with_every_fix_on() {
+        let mut s = Session::default();
+        let _ = diff_waiting(&mut s);
+        s.set_skipped(vec![0]);
+        let mut rx = diff_waiting(&mut s);
+        s.close().answer(Choice::Accept);
+        assert_eq!(rx.try_recv(), Ok(Answer::Accept("I have an apple.".into())));
     }
 
     #[test]

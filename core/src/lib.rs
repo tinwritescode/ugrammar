@@ -6,6 +6,7 @@ pub mod insights;
 pub mod sentence;
 pub mod settings;
 pub mod spans;
+pub mod stats;
 pub mod text;
 
 #[cfg(test)]

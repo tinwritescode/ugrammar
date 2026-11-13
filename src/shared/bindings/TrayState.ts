@@ -5,8 +5,13 @@ import type { PermissionStatus } from "./PermissionStatus";
 import type { Settings } from "./Settings";
 import type { StatusKind } from "./StatusKind";
 import type { UpdateNote } from "./UpdateNote";
+import type { WeekSummary } from "./WeekSummary";
 
-export type TrayState = { status: StatusKind, message?: string, settings: Settings, hotkey: string, insights: Array<Insight>, hasApiKey: boolean, 
+export type TrayState = { status: StatusKind, message?: string, settings: Settings, hotkey: string, insights: Array<Insight>, 
+/**
+ * Words checked and fixes applied, this week and last.
+ */
+week: WeekSummary, hasApiKey: boolean, 
 /**
  * Version installed in place, waiting for a restart.
  */

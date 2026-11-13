@@ -3,6 +3,7 @@ use ugrammar_core::diff::DiffOp;
 use ugrammar_core::i18n::Lang;
 use ugrammar_core::insights::Insight;
 use ugrammar_core::settings::Settings;
+use ugrammar_core::stats::WeekSummary;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -11,6 +12,8 @@ pub enum PopoverKind {
     Diff,
     Message,
     Loading,
+    /// A reaction to the selection: text to read, closed by the user.
+    Note,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -147,6 +150,8 @@ pub struct TrayState {
     pub settings: Settings,
     pub hotkey: String,
     pub insights: Vec<Insight>,
+    /// Words checked and fixes applied, this week and last.
+    pub week: WeekSummary,
     pub has_api_key: bool,
     /// Version installed in place, waiting for a restart.
     #[serde(skip_serializing_if = "Option::is_none")]

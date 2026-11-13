@@ -77,6 +77,9 @@ kbd {
   font: 12px/1 var(--font-hand); color: var(--on-kbd, #22185a);
 }
 ins { background: var(--ins-bg); color: var(--ins-fg); text-decoration: none; border-radius: 4px; padding: 0 3px; }
+/* A note's fix kind: correctness kinds share one tint, style gets its own. */
+.kind { font-size: 10.5px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; padding: 1px 6px; border-radius: 6px; background: var(--tint-1); color: var(--fg-2); }
+.kind.style { background: var(--tint-4); }
 del { background: var(--del-bg); color: var(--del-fg); text-decoration-thickness: 1.5px; border-radius: 4px; padding: 0 3px; }
 svg { width: 16px; height: 16px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 

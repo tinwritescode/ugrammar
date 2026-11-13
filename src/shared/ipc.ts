@@ -29,6 +29,10 @@ export interface ProofyApi {
   onPopover(cb: (p: PopoverPayload) => void): void;
   popoverAction(action: "accept" | "dismiss"): void;
   pendingAction(id: number, action: "accept" | "dismiss"): void;
+  /** Adds a word to the dictionary, which the engine never changes. */
+  addWord(word: string): void;
+  /** The diff's fixes the user turned off; Accept (button or ⌘↩) writes only the rest. */
+  popoverSkip(fixes: number[]): void;
   popoverResize(height: number, width?: number): void;
   checkUpdate(): void;
   clearInsights(): Promise<void>;

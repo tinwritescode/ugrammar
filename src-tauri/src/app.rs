@@ -4,7 +4,7 @@ use crate::helper::{Helper, HelperEvent};
 use crate::placement::{self, below_mouse, below_rect, Anchor};
 pub use crate::placement::TRAY_W;
 pub use crate::popover::POPOVER_W;
-use crate::popover::{Closed, Expiry, Session, Ticket};
+use crate::popover::{Answer, Closed, Expiry, Session, Ticket};
 use crate::reactions::{react, resting};
 use crate::helper_client::{HelperClient, HelperError, HotkeySlot, RangeEdit, Selection};
 use crate::ipc::{Choice, PendingFix, PermissionId, PermissionStatus, PopoverKind, PopoverPayload, Status, StatusKind, TrayState, UpdateNote};
@@ -25,6 +25,8 @@ use tokio::sync::{mpsc, oneshot};
 use ugrammar_core::engine::{EngineSetup, Purpose, Tone};
 use ugrammar_core::i18n::{fill, Lang, Strings};
 use ugrammar_core::insights::InsightStore;
+use ugrammar_core::spans::diff_spans;
+use ugrammar_core::stats::StatsStore;
 use ugrammar_core::settings::{Hotkey, Mod, Settings, SettingsStore};
 use ugrammar_core::text::{to_u16, utf16_len};
 
@@ -117,6 +119,7 @@ pub struct Ctx {
     pub helper: HelperClient,
     store: Mutex<SettingsStore>,
     insights: Mutex<InsightStore>,
+    stats: Mutex<StatsStore>,
     status: Mutex<Status>,
     popover: Mutex<Session>,
     auto: Mutex<AutoChecker>,
@@ -190,6 +193,7 @@ pub fn init(app: &AppHandle) -> mpsc::UnboundedReceiver<HelperEvent> {
         helper: HelperClient::new(Helper::start(helper_path(), tx)),
         store: Mutex::new(SettingsStore::new(&dir)),
         insights: Mutex::new(InsightStore::new(&dir)),
+        stats: Mutex::new(StatsStore::new(&dir)),
         status: Mutex::new(Status::of(StatusKind::Idle)),
         popover: Mutex::default(),
         auto: Mutex::new(AutoChecker::new()),
@@ -278,11 +282,14 @@ impl Ctx {
         key.is_some()
     }
 
-    async fn check_text(&self, text: String, tone: Option<Tone>, purpose: Purpose) -> Result<(String, Vec<String>), String> {
+    /// `app` (a bundle id) picks that app's own writing style.
+    async fn check_text(&self, text: String, tone: Option<Tone>, app: Option<&str>, purpose: Purpose) -> Result<(String, Vec<String>), String> {
         let s = self.settings();
         let setup = EngineSetup::from_settings(&s);
         let engine = setup.engine(s.timeout_ms, purpose, self.api_key().await);
-        engine.check(&setup.request(text, tone)).await.map(|r| (r.corrected, r.notes.unwrap_or_default())).map_err(|e| e.message)
+        let r = engine.check(&setup.request(text, tone, app)).await.map_err(|e| e.message)?;
+        self.stats.lock().unwrap().record(today(), r.original.split_whitespace().count() as u64, 0);
+        Ok((r.corrected, r.notes.unwrap_or_default()))
     }
 
     pub fn notify(&self, body: &str) {
@@ -348,6 +355,7 @@ impl Ctx {
             settings: self.settings(),
             hotkey: self.hotkey_label(),
             insights: self.insights.lock().unwrap().top(5),
+            week: self.stats.lock().unwrap().summary(today()),
             has_api_key,
             update: self.update.lock().unwrap().clone(),
             update_note: *self.update_note.lock().unwrap(),
@@ -545,7 +553,7 @@ impl Ctx {
     }
 
     /// Opens a popover over whatever was showing; `waiter` gets the user's choice.
-    fn open_popover(&self, payload: PopoverPayload, anchor: Option<Anchor>, waiter: Option<oneshot::Sender<Choice>>) -> Ticket {
+    fn open_popover(&self, payload: PopoverPayload, anchor: Option<Anchor>, waiter: Option<oneshot::Sender<Answer>>) -> Ticket {
         let payload = PopoverPayload { lang: self.settings().lang(), ..payload };
         let anchor = anchor.unwrap_or_else(|| below_mouse(ui::cursor(&self.app)));
         let (ticket, closed, size) = {
@@ -562,6 +570,18 @@ impl Ctx {
         ticket
     }
 
+    /// "Always keep" from the popover: the engine leaves the word alone from now on.
+    pub fn add_word(&'static self, word: &str) {
+        let mut words = self.settings().dictionary;
+        words.push(word.into());
+        self.update_settings(serde_json::json!({ "dictionary": words }));
+        self.refresh_tray();
+    }
+
+    pub fn popover_skip(&self, fixes: Vec<usize>) {
+        self.popover.lock().unwrap().set_skipped(fixes);
+    }
+
     pub fn popover_resize(&self, h: f64, w: Option<f64>) {
         let Some(size) = self.popover.lock().unwrap().resize(h, w) else { return };
         ui::resize(&self.app, "popover", size.0, size.1);
@@ -570,7 +590,7 @@ impl Ctx {
 
     /// Shows a fix; the receiver resolves with the user's choice. `esc`: also take Esc globally; auto-check popups leave it
     /// to the app being typed in.
-    fn open_diff(&self, p: PopoverPayload, anchor: Option<Anchor>, esc: bool) -> (Ticket, oneshot::Receiver<Choice>) {
+    fn open_diff(&self, p: PopoverPayload, anchor: Option<Anchor>, esc: bool) -> (Ticket, oneshot::Receiver<Answer>) {
         let (tx, rx) = oneshot::channel();
         let ticket = self.open_popover(PopoverPayload { esc, ..p }, anchor, Some(tx));
         let gs = self.app.global_shortcut();
@@ -610,11 +630,21 @@ impl Ctx {
 
     /// Manual checks: popovers sit by the text being fixed.
     pub async fn run_flow(&'static self, tone: Option<Tone>) -> FixOutcome {
+        self.anchored(self.flow.run(self, tone)).await
+    }
+
+    /// Popovers a hotkey action opens sit by the selection it started from.
+    async fn anchored(&'static self, action: impl std::future::Future<Output = FixOutcome>) -> FixOutcome {
         let anchor = self.selection_anchor().await;
         *self.flow_anchor.lock().unwrap() = anchor;
-        let outcome = self.flow.run(self, tone).await;
+        let outcome = action.await;
         *self.flow_anchor.lock().unwrap() = None;
         outcome
+    }
+
+    /// Tone menu's "How does it read?".
+    async fn react(&'static self) {
+        debug(&format!("react outcome={:?}", self.anchored(self.flow.react(self)).await));
     }
 
     fn flow_anchor(&self) -> Option<Anchor> {
@@ -660,6 +690,8 @@ impl Ctx {
                     &MenuItem::with_id(a, "tone_friendly", t.friendly, true, None::<&str>)?,
                     &MenuItem::with_id(a, "tone_short", t.short, true, None::<&str>)?,
                     &MenuItem::with_id(a, "tone_translate", t.translate, true, None::<&str>)?,
+                    &PredefinedMenuItem::separator(a)?,
+                    &MenuItem::with_id(a, "react", t.how_it_reads, true, None::<&str>)?,
                 ],
             )
         })();
@@ -681,6 +713,7 @@ impl Ctx {
             "ax" => open(AX_SETTINGS_URL),
             "settings" => self.open_panel().await,
             "quit" => self.app.exit(0),
+            "react" => self.react().await,
             _ => {
                 if let Some(tone) = id.strip_prefix("tone_").and_then(parse_tone) {
                     self.rewrite(tone).await;
@@ -781,7 +814,7 @@ impl Ctx {
     }
 
     async fn auto_check(&self, job: &Job) -> Result<(String, Vec<String>), String> {
-        self.check_text(job.sentence.clone(), None, Purpose::Background).await
+        self.check_text(job.sentence.clone(), None, job.bundle_id.as_deref(), Purpose::Background).await
     }
 
     async fn sentence_anchor(&self, f: &Found) -> Anchor {
@@ -798,7 +831,7 @@ impl Ctx {
         let r = self.helper.replace_range(edit).await;
         debug(&format!("auto write {}", outcome(&r, |m| m.as_deref())));
         if r.is_ok() {
-            self.insights.lock().unwrap().record(&f.sentence, &f.corrected, &f.notes);
+            FlowDeps::on_applied(self, &f.sentence, &f.corrected, &f.notes);
         } else {
             self.show_message(&fill(self.settings().strings().auto_write_failed, &[("hotkey", &self.hotkey_label())]), None);
         }
@@ -807,7 +840,7 @@ impl Ctx {
 
     /// The sentence's fix with reasons. ⌘↩ applies; Esc stays with the app being typed in. Any popover up (a manual
     /// check, its message, another fix) keeps it away.
-    async fn open_sentence_popup(&'static self, f: Found) {
+    async fn open_sentence_popup(&'static self, mut f: Found) {
         if !self.popover.lock().unwrap().claim_auto(f.id) {
             return self.auto_resolve(f.id, Outcome::Later);
         }
@@ -817,10 +850,13 @@ impl Ctx {
         }
         let (ticket, rx) = self.open_diff(PopoverPayload::diff(&f.sentence, &f.corrected, f.app_name.clone(), f.notes.clone()), Some(anchor), false);
         tauri::async_runtime::spawn(self.expire_popup(ticket));
-        let outcome = match rx.await.unwrap_or(Choice::Dismiss) {
-            Choice::Accept if self.write_fix(&f).await => Outcome::Applied,
-            Choice::Dismiss => Outcome::Dismissed,
-            _ => Outcome::Later,
+        let outcome = match rx.await.unwrap_or(Answer::Dismiss) {
+            Answer::Accept(text) => {
+                f.corrected = text;
+                if self.write_fix(&f).await { Outcome::Applied(f.corrected.clone()) } else { Outcome::Later }
+            }
+            Answer::Dismiss => Outcome::Dismissed,
+            Answer::Later => Outcome::Later,
         };
         self.popover.lock().unwrap().release_auto(f.id);
         self.auto_resolve(f.id, outcome);
@@ -860,7 +896,7 @@ impl Ctx {
             f.start = locate(&to_u16(text), f.start, &f.sentence).unwrap_or(f.start);
         }
         if self.write_fix(&f).await {
-            self.auto_resolve(id, Outcome::Applied);
+            self.auto_resolve(id, Outcome::Applied(f.corrected));
         }
     }
 
@@ -1012,6 +1048,11 @@ pub fn dismiss_shortcut() -> Shortcut {
     Shortcut::new(None, Code::Escape)
 }
 
+// shortcut: UTC days, so a week turns over at UTC midnight on Monday; use the local offset if that ever matters.
+fn today() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() / 86_400)
+}
+
 impl FlowDeps for Ctx {
     fn settings(&self) -> Settings {
         Ctx::settings(self)
@@ -1036,8 +1077,8 @@ impl FlowDeps for Ctx {
         r
     }
 
-    async fn check(&self, text: &str, tone: Option<Tone>) -> Result<(String, Vec<String>), String> {
-        self.check_text(text.into(), tone, Purpose::Hotkey).await
+    async fn check(&self, text: &str, tone: Option<Tone>, app: Option<&str>) -> Result<(String, Vec<String>), String> {
+        self.check_text(text.into(), tone, app, Purpose::Hotkey).await
     }
 
     fn set_status(&self, s: Status) {
@@ -1048,13 +1089,24 @@ impl FlowDeps for Ctx {
         Ctx::notify(self, message);
     }
 
-    async fn show_diff(&self, p: PopoverPayload) -> Choice {
+    async fn show_diff(&self, p: PopoverPayload) -> Answer {
         let (_, rx) = self.open_diff(p, self.flow_anchor(), true);
-        rx.await.unwrap_or(Choice::Dismiss)
+        rx.await.unwrap_or(Answer::Dismiss)
     }
 
     fn show_message(&self, message: &str) {
         ctx().show_message(message, self.flow_anchor());
+    }
+
+    async fn react(&self, text: &str) -> Result<String, String> {
+        let s = self.settings();
+        let engine = EngineSetup::from_settings(&s).engine(s.timeout_ms, Purpose::Hotkey, self.api_key().await);
+        engine.react(text, &s.explain_lang).await.map_err(|e| e.message)
+    }
+
+    fn show_reaction(&self, reaction: &str) {
+        // Esc or ⌘↩ closes it; nothing waits on the answer.
+        let _ = self.open_diff(PopoverPayload::text(PopoverKind::Note, reaction), self.flow_anchor(), true);
     }
 
     // The manual check owns the popover now.
@@ -1068,6 +1120,7 @@ impl FlowDeps for Ctx {
 
     fn on_applied(&self, original: &str, corrected: &str, notes: &[String]) {
         self.insights.lock().unwrap().record(original, corrected, notes);
+        self.stats.lock().unwrap().record(today(), 0, diff_spans(original, corrected).len() as u64);
     }
 
     fn note_accessibility_not_trusted(&self) {

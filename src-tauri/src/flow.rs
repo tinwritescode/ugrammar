@@ -1,6 +1,7 @@
 use crate::helper_client::{HelperError, Selection};
 use crate::reactions::resting;
-use crate::ipc::{Choice, PopoverPayload, Status, StatusKind};
+use crate::ipc::{PopoverPayload, Status, StatusKind};
+use crate::popover::Answer;
 use std::sync::atomic::{AtomicBool, Ordering};
 use ugrammar_core::engine::Tone;
 use ugrammar_core::i18n::{fill, Strings};
@@ -20,6 +21,8 @@ pub enum FixOutcome {
     Dismissed,
     Applied,
     WriteFailed,
+    /// "How does it read?" was answered; the text is untouched.
+    Reacted,
 }
 
 pub trait FlowDeps {
@@ -29,12 +32,17 @@ pub trait FlowDeps {
     /// Puts text on the system clipboard, for the user to paste themselves.
     async fn copy_text(&self, text: &str) -> Result<(), HelperError>;
     /// Engine call with the settings' dictionary and explain options; Err carries the message.
-    async fn check(&self, text: &str, tone: Option<Tone>) -> Result<(String, Vec<String>), String>;
+    /// `app` is the bundle id the text came from; it picks that app's writing style.
+    async fn check(&self, text: &str, tone: Option<Tone>, app: Option<&str>) -> Result<(String, Vec<String>), String>;
     fn set_status(&self, s: Status);
     fn notify(&self, message: &str);
     /// Resolves when the user picks, or when superseded.
-    async fn show_diff(&self, p: PopoverPayload) -> Choice;
+    async fn show_diff(&self, p: PopoverPayload) -> Answer;
     fn show_message(&self, message: &str);
+    /// "How does it read?": the engine's take on the text; Err carries the message.
+    async fn react(&self, text: &str) -> Result<String, String>;
+    /// Shows a reaction until the user closes it.
+    fn show_reaction(&self, reaction: &str);
     /// Immediate "Checking…" feedback; replaced by show_diff/show_message or removed by hide_loading.
     fn show_loading(&self);
     fn hide_loading(&self);
@@ -88,16 +96,17 @@ impl FixFlow {
         d.set_status(resting(&d.settings()));
     }
 
-    pub async fn run<D: FlowDeps>(&self, d: &D, tone: Option<Tone>) -> FixOutcome {
+    /// What every hotkey action starts with: not paused or busy, "Checking…" shown, and a selection of 3+ words.
+    async fn start<D: FlowDeps>(&self, d: &D) -> Result<(Busy<'_>, Selection), FixOutcome> {
         let s = d.settings();
         let t = s.strings();
         if s.paused {
-            return FixOutcome::Paused;
+            return Err(FixOutcome::Paused);
         }
         if self.busy.swap(true, Ordering::SeqCst) {
-            return FixOutcome::Busy;
+            return Err(FixOutcome::Busy);
         }
-        let _busy = Busy(&self.busy);
+        let busy = Busy(&self.busy);
         d.set_status(Status::of(StatusKind::Checking));
         d.show_loading();
         let sel = match d.read_selection(&s.excluded_apps).await {
@@ -107,31 +116,59 @@ impl FixFlow {
                 d.set_status(Status { kind: StatusKind::NeedsPermission, message: Some(t.grant_ax.into()) });
                 d.notify(t.needs_ax);
                 d.note_accessibility_not_trusted();
-                return FixOutcome::NeedsPermission;
+                return Err(FixOutcome::NeedsPermission);
             }
             Err(e) => {
                 d.show_message(&read_error(t, &e));
                 Self::idle(d);
-                return if e == HelperError::NoSelection { FixOutcome::NoSelection } else { FixOutcome::Skipped };
+                return Err(if e == HelperError::NoSelection { FixOutcome::NoSelection } else { FixOutcome::Skipped });
             }
         };
-        let text = sel.text.as_str();
-
-        if js_trim(text).split(is_js_space_char).filter(|w| !w.is_empty()).count() < 3 {
+        if js_trim(&sel.text).split(is_js_space_char).filter(|w| !w.is_empty()).count() < 3 {
             d.show_message(t.too_short);
             Self::idle(d);
-            return FixOutcome::TooShort;
+            return Err(FixOutcome::TooShort);
         }
 
-        let (corrected, notes) = match d.check(text, tone).await {
-            Ok(r) => r,
-            Err(e) => {
-                let msg = if e.is_empty() { t.engine_error.to_string() } else { e };
-                d.hide_loading();
-                d.set_status(Status { kind: StatusKind::Error, message: Some(msg.clone()) });
-                d.notify(&fill(t.check_failed, &[("msg", &msg)]));
-                return FixOutcome::Error;
+        Ok((busy, sel))
+    }
+
+    fn engine_failed<D: FlowDeps>(d: &D, e: String) -> FixOutcome {
+        let t = d.settings().strings();
+        let msg = if e.is_empty() { t.engine_error.to_string() } else { e };
+        d.hide_loading();
+        d.set_status(Status { kind: StatusKind::Error, message: Some(msg.clone()) });
+        d.notify(&fill(t.check_failed, &[("msg", &msg)]));
+        FixOutcome::Error
+    }
+
+    /// "How does it read?" on the selection: shown, never written.
+    pub async fn react<D: FlowDeps>(&self, d: &D) -> FixOutcome {
+        let (_busy, sel) = match self.start(d).await {
+            Ok(x) => x,
+            Err(o) => return o,
+        };
+        match d.react(&sel.text).await {
+            Ok(r) => {
+                Self::idle(d);
+                d.show_reaction(&r);
+                FixOutcome::Reacted
             }
+            Err(e) => Self::engine_failed(d, e),
+        }
+    }
+
+    pub async fn run<D: FlowDeps>(&self, d: &D, tone: Option<Tone>) -> FixOutcome {
+        let (_busy, sel) = match self.start(d).await {
+            Ok(x) => x,
+            Err(o) => return o,
+        };
+        let s = d.settings();
+        let t = s.strings();
+        let text = sel.text.as_str();
+        let (corrected, notes) = match d.check(text, tone, sel.bundle_id.as_deref()).await {
+            Ok(r) => r,
+            Err(e) => return Self::engine_failed(d, e),
         };
 
         if corrected == text {
@@ -150,17 +187,16 @@ impl FixFlow {
             d.show_message(t.applied);
             return FixOutcome::Applied;
         }
-        let choice = d.show_diff(PopoverPayload::diff(text, &corrected, sel.app_name.clone(), notes.clone())).await;
-        if choice != Choice::Accept {
+        let Answer::Accept(written) = d.show_diff(PopoverPayload::diff(text, &corrected, sel.app_name.clone(), notes.clone())).await else {
             return FixOutcome::Dismissed;
-        }
+        };
 
-        if let Err(e) = d.write_selection(&corrected, sel.pid, sel.method.as_deref()).await {
-            return write_failed(d, t, &e, &corrected).await;
+        if let Err(e) = d.write_selection(&written, sel.pid, sel.method.as_deref()).await {
+            return write_failed(d, t, &e, &written).await;
         }
         // Insights count repeated grammar mistakes; a translation is not one.
         if tone != Some(Tone::Translate) {
-            d.on_applied(text, &corrected, &notes);
+            d.on_applied(text, &written, &notes);
         }
         FixOutcome::Applied
     }
@@ -188,7 +224,7 @@ mod tests {
         copy_fails: bool,
         copies: RefCell<Vec<String>>,
         engine: Engine,
-        diff: Choice,
+        diff: Answer,
         gate: RefCell<Option<oneshot::Receiver<()>>>,
         status: RefCell<Vec<Status>>,
         notes: RefCell<Vec<String>>,
@@ -196,6 +232,8 @@ mod tests {
         writes: RefCell<Vec<String>>,
         applied: RefCell<Vec<String>>,
         excluded: RefCell<Vec<String>>,
+        checked_app: RefCell<Option<String>>,
+        reactions: RefCell<Vec<String>>,
         engine_calls: Cell<usize>,
         diffs: Cell<usize>,
         loading: Cell<usize>,
@@ -204,7 +242,7 @@ mod tests {
     }
 
     fn sel(text: &str) -> Result<Selection, HelperError> {
-        Ok(Selection { text: text.into(), method: Some("ax".into()), pid: Some(7), app_name: Some("Notes".into()), ..Default::default() })
+        Ok(Selection { text: text.into(), method: Some("ax".into()), pid: Some(7), bundle_id: Some("com.apple.Notes".into()), app_name: Some("Notes".into()) })
     }
 
     fn sel_err(code: &str) -> Result<Selection, HelperError> {
@@ -221,7 +259,7 @@ mod tests {
             copy_fails: false,
             copies: RefCell::default(),
             engine: Engine::Fix,
-            diff: Choice::Accept,
+            diff: Answer::Accept("I have an apple.".into()),
             gate: RefCell::new(None),
             status: RefCell::default(),
             notes: RefCell::default(),
@@ -229,6 +267,8 @@ mod tests {
             writes: RefCell::default(),
             applied: RefCell::default(),
             excluded: RefCell::default(),
+            checked_app: RefCell::default(),
+            reactions: RefCell::default(),
             engine_calls: Cell::new(0),
             diffs: Cell::new(0),
             loading: Cell::new(0),
@@ -263,7 +303,8 @@ mod tests {
             self.copies.borrow_mut().push(text.into());
             Ok(())
         }
-        async fn check(&self, text: &str, _tone: Option<Tone>) -> Result<(String, Vec<String>), String> {
+        async fn check(&self, text: &str, _tone: Option<Tone>, app: Option<&str>) -> Result<(String, Vec<String>), String> {
+            *self.checked_app.borrow_mut() = app.map(String::from);
             match self.engine {
                 Engine::Fix => {
                     self.engine_calls.set(self.engine_calls.get() + 1);
@@ -279,13 +320,23 @@ mod tests {
         fn notify(&self, m: &str) {
             self.notes.borrow_mut().push(m.into());
         }
-        async fn show_diff(&self, _p: PopoverPayload) -> Choice {
+        async fn show_diff(&self, _p: PopoverPayload) -> Answer {
             assert!(!matches!(self.engine, Engine::Same), "should not show");
             self.diffs.set(self.diffs.get() + 1);
-            self.diff
+            self.diff.clone()
         }
         fn show_message(&self, m: &str) {
             self.msgs.borrow_mut().push(m.into());
+        }
+        async fn react(&self, _text: &str) -> Result<String, String> {
+            self.engine_calls.set(self.engine_calls.get() + 1);
+            match self.engine {
+                Engine::Fail(m) => Err(m.into()),
+                _ => Ok("Blunt\n- Reads as an order.".into()),
+            }
+        }
+        fn show_reaction(&self, r: &str) {
+            self.reactions.borrow_mut().push(r.into());
         }
         fn show_loading(&self) {
             self.loading.set(self.loading.get() + 1);
@@ -307,7 +358,7 @@ mod tests {
 
     #[tokio::test]
     async fn quick_fix_writes_without_showing_the_diff() {
-        let f = Fake { quick_fix: true, diff: Choice::Dismiss, ..fake() };
+        let f = Fake { quick_fix: true, diff: Answer::Dismiss, ..fake() };
         assert_eq!(run(&f).await, FixOutcome::Applied);
         assert_eq!(f.diffs.get(), 0);
         assert_eq!(*f.writes.borrow(), ["I have an apple."]);
@@ -316,7 +367,7 @@ mod tests {
 
     #[tokio::test]
     async fn tone_always_shows_the_diff_even_with_quick_fix() {
-        let f = Fake { quick_fix: true, diff: Choice::Dismiss, ..fake() };
+        let f = Fake { quick_fix: true, diff: Answer::Dismiss, ..fake() };
         assert_eq!(FixFlow::default().run(&f, Some(Tone::Formal)).await, FixOutcome::Dismissed);
         assert_eq!(f.diffs.get(), 1);
     }
@@ -340,6 +391,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn accept_writes_and_records_only_the_fixes_left_on() {
+        let f = Fake { diff: Answer::Accept("I have a apple.".into()), ..fake() };
+        assert_eq!(run(&f).await, FixOutcome::Applied);
+        assert_eq!(*f.writes.borrow(), ["I have a apple."]);
+        assert_eq!(*f.applied.borrow(), ["I have a apple."]);
+    }
+
+    #[tokio::test]
+    async fn checks_with_the_selected_apps_style() {
+        let f = fake();
+        run(&f).await;
+        assert_eq!(f.checked_app.borrow().as_deref(), Some("com.apple.Notes"));
+    }
+
+    #[tokio::test]
+    async fn react_shows_the_reaction_and_never_writes() {
+        let f = fake();
+        assert_eq!(FixFlow::default().react(&f).await, FixOutcome::Reacted);
+        assert_eq!(*f.reactions.borrow(), ["Blunt\n- Reads as an order."]);
+        assert!(f.writes.borrow().is_empty() && f.applied.borrow().is_empty());
+    }
+
+    #[tokio::test]
+    async fn react_shares_the_fix_guards_and_errors() {
+        let f = Fake { sel: sel("Hi there"), ..fake() };
+        assert_eq!(FixFlow::default().react(&f).await, FixOutcome::TooShort);
+        let f = Fake { paused: true, ..fake() };
+        assert_eq!(FixFlow::default().react(&f).await, FixOutcome::Paused);
+        let f = Fake { engine: Engine::Fail("Timed out"), ..fake() };
+        assert_eq!(FixFlow::default().react(&f).await, FixOutcome::Error);
+        assert_eq!(f.hidden.get(), 1);
+        assert!(f.reactions.borrow().is_empty());
+    }
+
+    #[tokio::test]
     async fn shows_loading_before_the_engine_call_and_hides_it_on_error() {
         let f = Fake { engine: Engine::Fail("Timed out"), ..fake() };
         assert_eq!(run(&f).await, FixOutcome::Error);
@@ -356,7 +442,7 @@ mod tests {
 
     #[tokio::test]
     async fn dismiss_never_writes() {
-        let f = Fake { diff: Choice::Dismiss, ..fake() };
+        let f = Fake { diff: Answer::Dismiss, ..fake() };
         assert_eq!(run(&f).await, FixOutcome::Dismissed);
         assert!(f.writes.borrow().is_empty());
     }

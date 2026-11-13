@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use serde::Serialize;
 
 use crate::text::is_js_space_char;
@@ -76,6 +78,26 @@ pub fn diff_words(a: &str, b: &str) -> Vec<DiffOp> {
     ops
 }
 
+/// The original text with every fix applied except the `skipped` ones. A fix is one run of deletes/inserts between
+/// equal text, numbered from 0 the way the popover counts them.
+pub fn apply_fixes(ops: &[DiffOp], skipped: &BTreeSet<usize>) -> String {
+    let mut started = 0;
+    let mut out = String::new();
+    for (i, op) in ops.iter().enumerate() {
+        if op.kind == DiffKind::Equal {
+            out.push_str(&op.text);
+            continue;
+        }
+        if i == 0 || ops[i - 1].kind == DiffKind::Equal {
+            started += 1;
+        }
+        if (op.kind == DiffKind::Delete) == skipped.contains(&(started - 1)) {
+            out.push_str(&op.text);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,6 +127,22 @@ mod tests {
         let d = diff_words(a, b);
         assert_eq!(rebuild(&d, DiffKind::Insert), a);
         assert_eq!(rebuild(&d, DiffKind::Delete), b);
+    }
+
+    #[test]
+    fn apply_fixes_keeps_the_original_of_skipped_fixes_only() {
+        let d = diff_words("I has a apple.", "I have an apple.");
+        assert_eq!(apply_fixes(&d, &BTreeSet::new()), "I have an apple.");
+        assert_eq!(apply_fixes(&d, &BTreeSet::from([1])), "I have a apple.");
+        assert_eq!(apply_fixes(&d, &BTreeSet::from([0])), "I has an apple.");
+        assert_eq!(apply_fixes(&d, &BTreeSet::from([0, 1])), "I has a apple.");
+    }
+
+    #[test]
+    fn apply_fixes_numbers_a_leading_fix_zero() {
+        let d = diff_words("i like it", "I like it.");
+        assert_eq!(apply_fixes(&d, &BTreeSet::from([0])), "i like it.");
+        assert_eq!(apply_fixes(&d, &BTreeSet::from([1])), "I like it");
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::PathBuf;
@@ -61,6 +61,8 @@ pub struct Settings {
     pub quick_fix: bool,
     /// Writing style every fix uses (hotkey and check-as-you-type); None only fixes errors.
     pub style: Option<Tone>,
+    /// Bundle id -> that app's own style, used instead of `style`; None there only fixes errors.
+    pub app_styles: BTreeMap<String, Option<Tone>>,
     /// Language of the per-fix reasons.
     pub explain_lang: String,
     pub first_run_acknowledged: bool,
@@ -101,6 +103,7 @@ impl Default for Settings {
             auto_check: false,
             quick_fix: false,
             style: None,
+            app_styles: BTreeMap::new(),
             explain_lang: "Vietnamese".into(),
             first_run_acknowledged: false,
             provider: Provider::Openai,
@@ -150,6 +153,13 @@ fn hotkey(v: Option<&Value>) -> Option<Hotkey> {
     Some(Hotkey { key: key.to_ascii_uppercase(), mods })
 }
 
+/// Unknown tones, Translate (not a style) and empty ids are dropped; null stays, as "errors only".
+fn app_styles(v: Option<&Value>) -> BTreeMap<String, Option<Tone>> {
+    let Some(m) = v.and_then(Value::as_object) else { return BTreeMap::new() };
+    let style = |v: &Value| if v.is_null() { Some(None) } else { Tone::deserialize(v).ok().filter(|t| *t != Tone::Translate).map(Some) };
+    m.iter().filter(|(id, _)| !js_trim(id).is_empty()).filter_map(|(id, v)| Some((js_trim(id).to_string(), style(v)?))).collect()
+}
+
 pub fn normalize_settings(raw: &Value) -> Settings {
     let empty = Map::new();
     let r = raw.as_object().unwrap_or(&empty);
@@ -172,6 +182,7 @@ pub fn normalize_settings(raw: &Value) -> Settings {
         auto_check: is("autoCheck", true),
         quick_fix: is("quickFix", true),
         style: r.get("style").and_then(|v| Tone::deserialize(v).ok()).filter(|t| *t != Tone::Translate),
+        app_styles: app_styles(r.get("appStyles")),
         explain_lang: str_or("explainLang", d.explain_lang),
         first_run_acknowledged: is("firstRunAcknowledged", true),
         provider: r.get("provider").and_then(|p| Provider::deserialize(p).ok()).unwrap_or(d.provider),
@@ -360,7 +371,7 @@ mod tests {
         let dir = TempDir::new();
         let mut s = SettingsStore::new(dir.path());
         s.update(json!({ "excludedApps": [], "hotkey": { "key": "k", "mods": ["cmd"] } })).unwrap();
-        let expected = "{\n  \"endpoint\": \"http://localhost:20128/v1\",\n  \"model\": \"xpiki/gpt-6.1-sol\",\n  \"timeoutMs\": 10000,\n  \"dictionary\": [],\n  \"excludedApps\": [],\n  \"hotkey\": {\n    \"key\": \"K\",\n    \"mods\": [\n      \"cmd\"\n    ]\n  },\n  \"paused\": false,\n  \"explain\": true,\n  \"autoCheck\": false,\n  \"quickFix\": false,\n  \"style\": null,\n  \"explainLang\": \"Vietnamese\",\n  \"firstRunAcknowledged\": false,\n  \"provider\": \"openai\",\n  \"claudeModel\": \"haiku\",\n  \"claudePath\": \"\",\n  \"language\": null,\n  \"accessibilityEverGranted\": false\n}\n";
+        let expected = "{\n  \"endpoint\": \"http://localhost:20128/v1\",\n  \"model\": \"xpiki/gpt-6.1-sol\",\n  \"timeoutMs\": 10000,\n  \"dictionary\": [],\n  \"excludedApps\": [],\n  \"hotkey\": {\n    \"key\": \"K\",\n    \"mods\": [\n      \"cmd\"\n    ]\n  },\n  \"paused\": false,\n  \"explain\": true,\n  \"autoCheck\": false,\n  \"quickFix\": false,\n  \"style\": null,\n  \"appStyles\": {},\n  \"explainLang\": \"Vietnamese\",\n  \"firstRunAcknowledged\": false,\n  \"provider\": \"openai\",\n  \"claudeModel\": \"haiku\",\n  \"claudePath\": \"\",\n  \"language\": null,\n  \"accessibilityEverGranted\": false\n}\n";
         assert_eq!(fs::read_to_string(dir.path().join("settings.json")).unwrap(), expected);
         assert!(!dir.path().join("settings.json.tmp").exists());
     }
@@ -373,6 +384,13 @@ mod tests {
         assert_eq!(n.dictionary, ["a"]);
         assert!(!n.paused);
         assert_eq!(n.timeout_ms, 10000);
+    }
+
+    #[test]
+    fn app_styles_keep_known_tones_and_errors_only_and_drop_the_rest() {
+        let n = normalize_settings(&json!({ "appStyles": { "com.a": "formal", "com.b": null, "com.c": "bogus", "": "short", "com.d": 3, "com.e": "translate" } }));
+        assert_eq!(n.app_styles, BTreeMap::from([("com.a".into(), Some(Tone::Formal)), ("com.b".into(), None)]));
+        assert!(normalize_settings(&json!({ "appStyles": [1] })).app_styles.is_empty());
     }
 
     #[test]
