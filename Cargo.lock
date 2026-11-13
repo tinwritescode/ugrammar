@@ -5021,7 +5021,7 @@ dependencies = [
 
 [[package]]
 name = "ugrammar"
-version = "0.1.16"
+version = "0.1.17"
 dependencies = [
  "drag",
  "indexmap 2.14.2",
