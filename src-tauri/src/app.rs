@@ -32,7 +32,7 @@ use ugrammar_core::text::{to_u16, utf16_len};
 
 pub const APP_NAME: &str = "ugrammar";
 const REPO_URL: &str = "https://github.com/tinwritescode/ugrammar";
-const LICENSE_URL: &str = "https://tyvn.online";
+const LICENSE_URL: &str = "https://tinwritescode.xyz";
 const AX_SETTINGS_URL: &str = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
 /// Matches `identifier` in tauri.conf.json; needed to target this app with `tccutil`.
 const BUNDLE_ID: &str = "dev.ugrammar.app";

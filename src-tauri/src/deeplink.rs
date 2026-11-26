@@ -1,4 +1,4 @@
-//! `ugrammar://connect?key=ug_...` links from tyvn.online/account.
+//! `ugrammar://connect?key=ug_...` links from tinwritescode.xyz/account.
 //! The endpoint is fixed so a link can never point the app at another server.
 
 use tauri::{App, Url};
@@ -8,7 +8,7 @@ use ugrammar_core::i18n::fill;
 
 use crate::app::{ctx, Ctx};
 
-pub const ENDPOINT: &str = "https://tyvn.online/api/public/ugrammar/v1";
+pub const ENDPOINT: &str = "https://tinwritescode.xyz/api/public/ugrammar/v1";
 
 /// The license key in a valid connect link, or None.
 pub fn license_from(url: &Url) -> Option<String> {
